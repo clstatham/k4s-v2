@@ -93,10 +93,10 @@ pub fn data(i: &str) -> IResult<&str, Token> {
 }
 
 pub fn offset(i: &str) -> IResult<&str, Token> {
-    map(tuple((opt(tag("-")), |i| decimal(InstrSize::I64, i), tag("+"), register)), |res| {
-        if let Token::I64(off) = res.1 {
-            if let Token::Register(reg) = res.3 {
-                if res.0.is_some() {
+    map(tuple((tag("["), opt(tag("-")), |i| decimal(InstrSize::I64, i), tag("+"), register, tag("]"))), |(_, neg, off, _, reg, _)| {
+        if let Token::I64(off) = off {
+            if let Token::Register(reg) = reg  {
+                if neg.is_some() {
                     Token::Offset(-(off as i64), reg)
                 }
                 else {
@@ -116,14 +116,14 @@ pub fn val(size: InstrSize, i: &str) -> IResult<&str, Token> {
 }
 
 pub fn addr(i: &str) -> IResult<&str, Token> {
-    map(tuple((tag("["), alt((|a| val(InstrSize::I64, a), offset)), tag("]"))), |res| {
+    map(tuple((tag("["), |a| val(InstrSize::I64, a), tag("]"))), |res| {
         Token::Addr(Box::new(res.1))
     })(i)
 }
 
 
 pub fn token(size: InstrSize, asm: &str) -> IResult<&str, Token>{
-    alt((|a| val(size, a), addr))(asm)
+    alt((|a| val(size, a), addr, offset))(asm)
 }
 
 pub fn opcode(asm: &str) -> IResult<&str, Opcode> {

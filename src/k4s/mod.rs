@@ -267,7 +267,7 @@ impl Display for Token {
             Self::F32(v) => write!(f, "{}", v),
             Self::F64(v) => write!(f, "{}", v),
             Self::Addr(v) => write!(f, "[{}]", v),
-            Self::Offset(off, reg) => write!(f, "[{}+{}]", *off as i64, reg),
+            Self::Offset(off, reg) => write!(f, "[{}+{}]", *off, reg),
             Self::Register(reg) => write!(f, "{}", reg),
             Self::Label(lab) => write!(f, "%{}", lab.name),
             Self::Data(dat) => write!(f, "@{}", dat.label.name),

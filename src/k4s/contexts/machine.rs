@@ -135,7 +135,7 @@ impl MachineContext {
     pub fn step(&mut self) -> Result<bool> {
         let chunk = &self.ram[self.regs.pc as usize .. self.regs.pc as usize + 64];
         let (_, instr) = Instr::disassemble_next(chunk).map_err(|err| err.to_owned())?;
-        dbg!(&instr);
+        println!("{}", &instr);
         if instr.opcode == Opcode::Hlt {
             return Ok(false)
         }
