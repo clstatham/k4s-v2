@@ -129,7 +129,6 @@ impl MachineContext {
         ram[entry_point as usize .. entry_point as usize + program.len()].copy_from_slice(program);
         regs.pc = entry_point;
         regs.sp = ram.len() as u64;
-        dbg!(program);
         Ok(MachineContext { ram, regs })
     }
 

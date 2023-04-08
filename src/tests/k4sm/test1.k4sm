@@ -1,5 +1,5 @@
 !ent 0x1000
-mov i64 ra $1000
+mov i32 ra $1000
 mov i64 rb [ra]
 printi i64 $420
 hlt

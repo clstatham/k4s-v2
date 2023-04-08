@@ -62,7 +62,7 @@ impl Primitive for u16 {
     }
 }
 impl Primitive for u32 {
-    const MACHINE_CODE: u8 = 2;
+    const MACHINE_CODE: u8 = 1 << 2;
     const ASM: &'static str = "i32";
     
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
