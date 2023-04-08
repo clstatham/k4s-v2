@@ -6,6 +6,7 @@ use nom::{
     sequence::tuple,
     IResult, character::{complete::one_of}, error::dbg_dmp,
 };
+use rustc_hash::FxHashMap;
 
 use crate::k4s::{Instr, InstrSize, Label, Opcode, Register, Token, Linkage, Primitive};
 
@@ -25,23 +26,23 @@ pub mod tags {
     pub const ADDRESS: u8 = 0xfd;
 }
 
-pub fn debug_entry(mc: &[u8]) -> IResult<&[u8], Label> {
+pub fn debug_entry(mc: &[u8]) -> IResult<&[u8], (String, u64)> {
     map(tuple((
         tag(tags::HEADER_DEBUG_SYMBOLS_ENTRY_ADDR),
         take(8_usize),
         take_until1(tags::HEADER_DEBUG_SYMBOLS_ENTRY_END),
         take(2_usize),
-    )), |res: (&[u8], &[u8], &[u8], &[u8])| Label { name: String::from_utf8(res.2.to_vec()).unwrap(), linkage: Linkage::Linked(u64::from_bytes(res.1).unwrap()) })(mc)
+    )), |res: (&[u8], &[u8], &[u8], &[u8])| (String::from_utf8(res.2.to_vec()).unwrap(), u64::from_bytes(res.1).unwrap()))(mc)
 }
 
-pub fn parse_debug_symbols(mc: &[u8]) -> IResult<&[u8], Vec<Label>> {
+pub fn parse_debug_symbols(mc: &[u8]) -> IResult<&[u8], FxHashMap<u64, String>> {
     map(
         tuple((
             tag(tags::HEADER_DEBUG_SYMBOLS_START),
             many0(debug_entry),
             tag(tags::HEADER_DEBUG_SYMBOLS_END),
         )),
-        |(_, res, _)| res,
+        |(_, res, _)| res.into_iter().map(|(name, addr)| (addr, name)).collect(),
     )(mc)
 }
 

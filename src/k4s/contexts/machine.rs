@@ -1,4 +1,5 @@
 use anyhow::{Result, Error};
+use rustc_hash::FxHashMap;
 
 use crate::k4s::{Primitive, InstrSize, Token, Register, parsers::machine::{tags, parse_debug_symbols}, Instr, Opcode, Label};
 
@@ -106,7 +107,7 @@ impl Ram for Box<[u8]> {
 pub struct MachineContext {
     pub ram: Box<[u8]>,
     pub regs: Regs,
-    pub debug_symbols: Vec<Label>,
+    pub debug_symbols: FxHashMap<u64, String>,
 }
 
 impl MachineContext {

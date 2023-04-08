@@ -3,6 +3,8 @@ use std::{
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
 };
 
+use rustc_hash::FxHashMap;
+
 pub mod parsers;
 pub mod contexts;
 
@@ -276,12 +278,12 @@ impl Display for Token {
 }
 
 impl Token {
-    pub fn display_with_symbols(&self, symbols: &Vec<Label>) -> String {
+    pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
         match self {
             Self::Addr(v) => format!("[{}]", v.display_with_symbols(symbols)),
             Self::I64(v) => {
-                if let Some(lab) = symbols.iter().find(|sym| if let Linkage::Linked(a) = sym.linkage { a == *v } else { false }) {
-                    format!("%{}", lab.name)
+                if let Some(lab) = symbols.get(v) {
+                    format!("%{}", lab)
                 } else {
                     format!("${}", v)
                 }
@@ -571,7 +573,7 @@ impl Display for Instr {
 }
 
 impl Instr {
-    pub fn display_with_symbols(&self, symbols: &Vec<Label>) -> String {
+    pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
         use std::fmt::Write;
         let mut f = String::new();
         write!(f, "{} {}", self.opcode, self.size).unwrap();
