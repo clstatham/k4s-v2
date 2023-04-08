@@ -249,7 +249,7 @@ pub enum Token {
     F32(f32),
     F64(f64),
     Addr(Box<Token>),
-    Offset(u64, Register),
+    Offset(i64, Register),
     Register(Register),
     Label(Label),
     Data(Data),

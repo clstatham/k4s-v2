@@ -83,7 +83,7 @@ pub fn parse_offset(mc: &[u8]) -> IResult<&[u8], Token> {
         tuple((tag(&[REGISTER_OFFSET]), take(8_usize), parse_register)),
         |res| {
             if let Token::Register(reg) = res.2 {
-                Token::Offset(u64::from_bytes(res.1).unwrap(), reg)
+                Token::Offset(u64::from_bytes(res.1).unwrap() as i64, reg)
             } else {
                 unreachable!()
             }

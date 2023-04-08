@@ -93,10 +93,15 @@ pub fn data(i: &str) -> IResult<&str, Token> {
 }
 
 pub fn offset(i: &str) -> IResult<&str, Token> {
-    map(preceded(opt(tag("-")), tuple((|i| decimal(InstrSize::I64, i), tag("+"), register))), |res| {
-        if let Token::I128(off) = res.0 {
-            if let Token::Register(reg) = res.2 {
-                Token::Offset(off as u64, reg)
+    map(tuple((opt(tag("-")), |i| decimal(InstrSize::I64, i), tag("+"), register)), |res| {
+        if let Token::I64(off) = res.1 {
+            if let Token::Register(reg) = res.3 {
+                if res.0.is_some() {
+                    Token::Offset(-(off as i64), reg)
+                }
+                else {
+                    Token::Offset(off as i64, reg)
+                }
             } else {
                 unreachable!()
             }
@@ -226,7 +231,7 @@ impl Token {
             }
             Token::Offset(off, reg) => {
                 ctx.push_program_bytes(&[REGISTER_OFFSET]);
-                ctx.push_program_bytes(&off.to_bytes());
+                ctx.push_program_bytes(&(*off as u64).to_bytes());
                 ctx.push_program_bytes(&[reg.mc_repr()]);
             }
             Token::Data(dat) => {
