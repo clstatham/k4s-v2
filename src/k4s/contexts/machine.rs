@@ -1,6 +1,6 @@
 use anyhow::{Result, Error};
 
-use crate::k4s::{Primitive, InstrSize, Token, Register, parsers::machine::tags, Instr, Opcode};
+use crate::k4s::{Primitive, InstrSize, Token, Register, parsers::machine::{tags, parse_debug_symbols}, Instr, Opcode, Label};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Regs {
@@ -106,6 +106,7 @@ impl Ram for Box<[u8]> {
 pub struct MachineContext {
     pub ram: Box<[u8]>,
     pub regs: Regs,
+    pub debug_symbols: Vec<Label>,
 }
 
 impl MachineContext {
@@ -122,6 +123,9 @@ impl MachineContext {
         let program = &program[tags::HEADER_ENTRY_POINT.len()..];
         let entry_point = u64::from_bytes(&program[..8]).unwrap();
         let program = &program[8..];
+
+        let (program, debug_symbols) = parse_debug_symbols(program).map_err(|err| err.to_owned())?;
+
         if &program[..tags::HEADER_END.len()] != tags::HEADER_END {
             return Err(Error::msg("Invalid k4s header end tag"));
         }
@@ -129,13 +133,13 @@ impl MachineContext {
         ram[entry_point as usize .. entry_point as usize + program.len()].copy_from_slice(program);
         regs.pc = entry_point;
         regs.sp = ram.len() as u64;
-        Ok(MachineContext { ram, regs })
+        Ok(MachineContext { ram, regs, debug_symbols })
     }
 
     pub fn step(&mut self) -> Result<bool> {
         let chunk = &self.ram[self.regs.pc as usize .. self.regs.pc as usize + 64];
         let (_, instr) = Instr::disassemble_next(chunk).map_err(|err| err.to_owned())?;
-        println!("{}", &instr);
+        println!("{}", &instr.display_with_symbols(&self.debug_symbols));
         if instr.opcode == Opcode::Hlt {
             return Ok(false)
         }

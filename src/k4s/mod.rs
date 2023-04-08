@@ -259,13 +259,13 @@ impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unknown => write!(f, "(UNKNOWN)"),
-            Self::I8(v) => write!(f, "{}", v),
-            Self::I16(v) => write!(f, "{}", v),
-            Self::I32(v) => write!(f, "{}", v),
-            Self::I64(v) => write!(f, "{}", v),
-            Self::I128(v) => write!(f, "{}", v),
-            Self::F32(v) => write!(f, "{}", v),
-            Self::F64(v) => write!(f, "{}", v),
+            Self::I8(v) => write!(f, "${}", v),
+            Self::I16(v) => write!(f, "${}", v),
+            Self::I32(v) => write!(f, "${}", v),
+            Self::I64(v) => write!(f, "${}", v),
+            Self::I128(v) => write!(f, "${}", v),
+            Self::F32(v) => write!(f, "${}", v),
+            Self::F64(v) => write!(f, "${}", v),
             Self::Addr(v) => write!(f, "[{}]", v),
             Self::Offset(off, reg) => write!(f, "[{}+{}]", *off, reg),
             Self::Register(reg) => write!(f, "{}", reg),
@@ -276,6 +276,20 @@ impl Display for Token {
 }
 
 impl Token {
+    pub fn display_with_symbols(&self, symbols: &Vec<Label>) -> String {
+        match self {
+            Self::Addr(v) => format!("[{}]", v.display_with_symbols(symbols)),
+            Self::I64(v) => {
+                if let Some(lab) = symbols.iter().find(|sym| if let Linkage::Linked(a) = sym.linkage { a == *v } else { false }) {
+                    format!("%{}", lab.name)
+                } else {
+                    format!("${}", v)
+                }
+            }
+            _ => format!("{}", self)
+        }
+    }
+
     pub const fn mc_size_in_bytes(&self) -> usize {
         match self {
             Self::I8(_) => 1 + 1,
@@ -557,6 +571,20 @@ impl Display for Instr {
 }
 
 impl Instr {
+    pub fn display_with_symbols(&self, symbols: &Vec<Label>) -> String {
+        use std::fmt::Write;
+        let mut f = String::new();
+        write!(f, "{} {}", self.opcode, self.size).unwrap();
+        if let Some(ref arg) = self.arg0 {
+            write!(f, " {}", arg.display_with_symbols(symbols)).unwrap();
+        }
+        if let Some(ref arg) = self.arg1 {
+            write!(f, " {}", arg.display_with_symbols(symbols)).unwrap();
+        }
+
+        f
+    }
+
     pub fn signature(&self) -> InstrSig {
         let arg0 = if let Some(arg0) = &self.arg0 {
             match arg0 {

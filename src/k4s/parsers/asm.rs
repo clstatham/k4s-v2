@@ -15,7 +15,7 @@ use crate::k4s::{InstrSig, InstrSize, Register, Token, Opcode, Primitive, contex
 use super::machine::tags::{LITERAL, REGISTER_OFFSET, ADDRESS};
 
 
-fn decimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
+pub fn decimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
     map(many1(terminated(one_of("0123456789"), many0(char('_')))), |res| match size {
         InstrSize::I8 => Token::I8(res.into_iter().collect::<String>().parse().unwrap()),
         InstrSize::I16 => Token::I16(res.into_iter().collect::<String>().parse().unwrap()),
@@ -28,7 +28,7 @@ fn decimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
     })(input)
 }
 
-fn hexadecimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
+pub fn hexadecimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
     map(preceded(
         alt((tag::<&str, &str, Error<&str>>("0x"), tag("0X"))),
         recognize(many1(terminated(

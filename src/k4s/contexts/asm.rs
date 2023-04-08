@@ -182,7 +182,16 @@ impl AssemblyContext {
         final_out.extend_from_slice(tags::HEADER_MAGIC);
         final_out.extend_from_slice(tags::HEADER_ENTRY_POINT);
         final_out.extend_from_slice(&self.entry_point.to_bytes());
+        final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_START);
+        for (label, addr) in self.linked_refs.iter() {
+            final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_ADDR);
+            final_out.extend_from_slice(&addr.to_bytes());
+            final_out.extend_from_slice(label.name.as_bytes());
+            final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_END);
+        }
+        final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_END);
         final_out.extend_from_slice(tags::HEADER_END);
+        
         final_out.extend_from_slice(&self.output);
         self.output = final_out;
         println!("Assembled program is {} bytes long.", self.output.len());
