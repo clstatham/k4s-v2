@@ -182,6 +182,8 @@ pub fn opcode(asm: &str) -> IResult<&str, Opcode> {
             |asm| Opcode::Shr.parse_asm(asm),
             |asm| Opcode::Sshr.parse_asm(asm),
             |asm| Opcode::Sext.parse_asm(asm),
+            |asm| Opcode::Jge.parse_asm(asm),
+            |asm| Opcode::Jle.parse_asm(asm),
         )),
     ))(asm)
 }

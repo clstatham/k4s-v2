@@ -1,8 +1,7 @@
 !ent 0x1000
 jmp i64 %start
 %start
-    mov i32 ra $1000
-    mov i64 rb [ra]
-    add i64 [ra] [-30+bp]
-    printi i64 $420
+    mov i32 ra $10000
+    mov i64 [ra] $420
+    printi i64 [ra]
     hlt

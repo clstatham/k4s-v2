@@ -3,6 +3,8 @@ use std::{
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
 };
 
+use anyhow::{Result, Error};
+
 use rustc_hash::FxHashMap;
 
 pub mod parsers;
@@ -222,25 +224,25 @@ impl<T: Primitive + BitXor<T, Output = T>> BitXor<Prim<T>> for Prim<T> {
 }
 
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, Eq, Hash, Clone, PartialEq, PartialOrd, Ord)]
 pub enum Linkage {
     Linked(u64), // addr
     NeedsLinking,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd)]
 pub struct Label {
     pub name: String,
     pub linkage: Linkage,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Data {
     pub label: Label,
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Token {
     Unknown,
     I8(u8),
@@ -277,7 +279,65 @@ impl Display for Token {
     }
 }
 
+macro_rules! token_arith_impl {
+    ($op:ident) => {
+        pub fn $op(&self, rhs: &Self) -> Result<Self> {
+            match (self, rhs) {
+                (Self::I8(a), Self::I8(b)) => Ok(Self::I8(a.$op(b))),
+                (Self::I16(a), Self::I16(b)) => Ok(Self::I16(a.$op(b))),
+                (Self::I32(a), Self::I32(b)) => Ok(Self::I32(a.$op(b))),
+                (Self::I64(a), Self::I64(b)) => Ok(Self::I64(a.$op(b))),
+                (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
+                (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
+                (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
+                _ => Err(Error::msg("token types must match and be numeric for arithmetic operations"))
+            }
+        }
+    };
+}
+
+macro_rules! token_int_arith_impl {
+    ($op:ident) => {
+        pub fn $op(&self, rhs: &Self) -> Result<Self> {
+            match (self, rhs) {
+                (Self::I8(a), Self::I8(b)) => Ok(Self::I8(a.$op(b))),
+                (Self::I16(a), Self::I16(b)) => Ok(Self::I16(a.$op(b))),
+                (Self::I32(a), Self::I32(b)) => Ok(Self::I32(a.$op(b))),
+                (Self::I64(a), Self::I64(b)) => Ok(Self::I64(a.$op(b))),
+                (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
+                // (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
+                // (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
+                _ => Err(Error::msg("token types must match and be integers for integer arithmetic operations"))
+            }
+        }
+    };
+}
+
 impl Token {
+    token_arith_impl!(add);
+    token_arith_impl!(sub);
+    token_arith_impl!(mul);
+    token_arith_impl!(div);
+    token_arith_impl!(rem);
+    token_int_arith_impl!(bitand);
+    token_int_arith_impl!(bitor);
+    token_int_arith_impl!(bitxor);
+    token_int_arith_impl!(shl);
+    token_int_arith_impl!(shr);
+
+    pub fn as_integer<T>(&self) -> Option<T>
+    where
+        T: TryFrom<u128> + TryFrom<u64> + TryFrom<u32> + TryFrom<u16> + TryFrom<u8> {
+        match self {
+            Self::I128(v) => (*v).try_into().ok(),
+            Self::I64(v) => (*v).try_into().ok(),
+            Self::I32(v) => (*v).try_into().ok(),
+            Self::I16(v) => (*v).try_into().ok(),
+            Self::I8(v) => (*v).try_into().ok(),
+            _ => None,
+        }
+    }
+
     pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
         match self {
             Self::Addr(v) => format!("[{}]", v.display_with_symbols(symbols)),
@@ -289,6 +349,24 @@ impl Token {
                 }
             }
             _ => format!("{}", self)
+        }
+    }
+
+    pub const fn value_size_in_bytes(&self) -> usize {
+        match self {
+            Self::I8(_) => 1,
+            Self::I16(_) => 2,
+            Self::I32(_) => 4,
+            Self::I64(_) => 8,
+            Self::I128(_) => 16,
+            Self::F32(_) => 4,
+            Self::F64(_) => 8,
+            Self::Label(_) => 8,
+            Self::Addr(adr) => 8,
+            Self::Data(_) => 8,
+            Self::Register(_) => 8,
+            Self::Offset(_, _) => 9,
+            Self::Unknown => 0,
         }
     }
 
@@ -360,6 +438,8 @@ pub enum Opcode {
     Jmp,
     Jgt,
     Jlt,
+    Jge,
+    Jle,
     Jeq,
     Jne,
     Juno,
@@ -417,6 +497,8 @@ impl Opcode {
             Opcode::Jlt => 1,
             Opcode::Jeq => 1,
             Opcode::Jne => 1,
+            Opcode::Jge => 1,
+            Opcode::Jle => 1,
             Opcode::Juno => 1,
             Opcode::Junoeq => 1,
             Opcode::Junone => 1,
@@ -470,6 +552,8 @@ impl Display for Opcode {
             Self::Jlt => "jlt",
             Self::Jeq => "jeq",
             Self::Jne => "jne",
+            Self::Jge => "jge",
+            Self::Jle => "jle",
             Self::Juno => "juno",
             Self::Junoeq => "junoeq",
             Self::Junone => "junone",
@@ -573,6 +657,14 @@ impl Display for Instr {
 }
 
 impl Instr {
+    pub fn arg0(&self) -> Result<Token> {
+        self.arg0.clone().ok_or(Error::msg("no arg0 for instruction"))
+    }
+
+    pub fn arg1(&self) -> Result<Token> {
+        self.arg1.clone().ok_or(Error::msg("no arg1 for instruction"))
+    }
+
     pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
         use std::fmt::Write;
         let mut f = String::new();
@@ -648,7 +740,7 @@ pub const ALL_REGS: &[Register] = &[
     Register::Fl,
 ];
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum Register {
     Rz = 0,

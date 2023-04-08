@@ -1,7 +1,56 @@
+use std::cmp::Ordering;
+
 use anyhow::{Result, Error};
 use rustc_hash::FxHashMap;
 
-use crate::k4s::{Primitive, InstrSize, Token, Register, parsers::machine::{tags, parse_debug_symbols}, Instr, Opcode, Label};
+use crate::k4s::{Primitive, InstrSize, Token, Register, parsers::machine::{tags, parse_debug_symbols}, Instr, Opcode};
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct Fl: u64 {
+        const EQ = 1 << 0;
+        const GT = 1 << 1;
+        const ORD = 1 << 2;
+    }
+}
+
+impl Fl {
+    pub fn eq(self) -> bool {
+        self.contains(Self::EQ)
+    }
+    pub fn gt(self) -> bool {
+        self.contains(Self::GT)
+    }
+    pub fn lt(self) -> bool {
+        !self.contains(Self::GT) && !self.contains(Self::EQ)
+    }
+    pub fn ord(self) -> bool {
+        self.contains(Self::ORD)
+    }
+
+    pub fn cmp(&mut self, a: Token, b: Token) {
+        match a.partial_cmp(&b) {
+            Some(Ordering::Equal) => {
+                self.insert(Self::ORD);
+                self.remove(Self::GT);
+                self.insert(Self::EQ);
+            }
+            Some(Ordering::Greater) => {
+                self.insert(Self::ORD);
+                self.remove(Self::EQ);
+                self.insert(Self::GT);
+            }
+            Some(Ordering::Less) => {
+                self.insert(Self::ORD);
+                self.remove(Self::GT);
+                self.remove(Self::EQ);
+            }
+            None => {
+                self.remove(Self::ORD);
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Regs {
@@ -20,7 +69,7 @@ pub struct Regs {
     pub bp: u64,
     pub sp: u64,
     pub pc: u64,
-    pub fl: u64,
+    pub fl: Fl,
 }
 
 impl Regs {
@@ -42,7 +91,7 @@ impl Regs {
             Register::Bp => self.bp,
             Register::Sp => self.sp,
             Register::Pc => self.pc,
-            Register::Fl => self.fl,
+            Register::Fl => self.fl.bits(),
         }
     }
 
@@ -64,7 +113,7 @@ impl Regs {
             Register::Bp => self.bp = val,
             Register::Sp => self.sp = val,
             Register::Pc => self.pc = val,
-            Register::Fl => self.fl = val,
+            Register::Fl => self.fl = Fl::from_bits_truncate(val),
         }
     }
 }
@@ -104,6 +153,12 @@ impl Ram for Box<[u8]> {
     }
 }
 
+pub enum MachineState {
+    Continue,
+    ContDontUpdatePc, // used for jumps, calls, rets
+    Halt
+}
+
 pub struct MachineContext {
     pub ram: Box<[u8]>,
     pub regs: Regs,
@@ -137,19 +192,251 @@ impl MachineContext {
         Ok(MachineContext { ram, regs, debug_symbols })
     }
 
-    pub fn step(&mut self) -> Result<bool> {
+    pub fn step(&mut self) -> Result<MachineState> {
         let chunk = &self.ram[self.regs.pc as usize .. self.regs.pc as usize + 64];
         let (_, instr) = Instr::disassemble_next(chunk).map_err(|err| err.to_owned())?;
-        println!("{}", &instr.display_with_symbols(&self.debug_symbols));
+        #[cfg(debug_assertions)]
+        println!("{:016x} --> {}", self.regs.pc, &instr.display_with_symbols(&self.debug_symbols));
         if instr.opcode == Opcode::Hlt {
-            return Ok(false)
+            return Ok(MachineState::Halt)
         }
-        self.regs.pc += instr.mc_size_in_bytes() as u64;
-        Ok(true)
+
+        match self.emulate_instr(&instr)? {
+            MachineState::Continue => {
+                self.regs.pc += instr.mc_size_in_bytes() as u64;
+                Ok(MachineState::Continue)
+            }
+            MachineState::ContDontUpdatePc => {
+                Ok(MachineState::Continue)
+            }
+            MachineState::Halt => Ok(MachineState::Halt)
+        }
     }
 
     pub fn run_until_hlt(&mut self) -> Result<()> {
-        while self.step()? {}
+        loop {
+            if let MachineState::Halt = self.step()? {
+                return Ok(())
+            }
+        }
+    }
+
+    fn push(&mut self, val: Token) {
+        self.regs.sp -= val.value_size_in_bytes() as u64;
+        self.ram.poke(&val, self.regs.sp);
+    }
+
+    fn pop(&mut self, size: InstrSize) -> Token {
+        let val = self.ram.peek(size, self.regs.sp);
+        self.regs.sp += val.value_size_in_bytes() as u64;
+        val
+    }
+
+    fn offset_to_addr(&self, token: Token) -> Token {
+        if let Token::Offset(offset, reg) = token {
+            Token::Addr(Box::new(Token::I64((self.regs.get(reg) as i64 + offset) as u64)))
+        } else {
+            token
+        }
+    }
+
+    fn register_to_value(&self, token: Token) -> Token {
+        if let Token::Register(reg) = token {
+            Token::I64(self.regs.get(reg))
+        } else {
+            token
+        }
+    }
+
+    fn addr_to_value(&self, token: Token, target_size: InstrSize) -> Result<Token> {
+        if let Token::Addr(ref tok) = token {
+            let addr = self.eval_token(*tok.to_owned(), target_size)?;
+            if let Token::I64(addr) = addr {
+                Ok(self.ram.peek(target_size, addr))
+            } else {
+                Err(Error::msg(format!("Error parsing addr token: {:?}", token)))
+            }
+        } else {
+            Ok(token)
+        }
+    }
+
+    fn eval_token(&self, token: Token, target_size: InstrSize) -> Result<Token> {
+        let token = self.register_to_value(token);
+        let token = self.offset_to_addr(token);
+        let token = self.addr_to_value(token, target_size)?;
+        // the token should now be in integer (or floating point) form
+        Ok(token)
+    }
+
+    fn assign_with_token(&mut self, lvalue: Token, rvalue: Token, target_size: InstrSize) -> Result<()> {
+        match lvalue {
+            Token::Register(reg) => {
+                self.regs.set(reg, self.eval_token(rvalue, InstrSize::I64)?.as_integer().unwrap());
+            }
+            Token::Offset(_, _) => {
+                let addr = self.offset_to_addr(lvalue);
+                let addr = self.eval_token(addr, target_size)?;
+                self.ram.poke(&self.eval_token(rvalue, target_size)?, addr.as_integer().unwrap());
+            }
+            Token::Addr(addr) => {
+                let addr = self.eval_token(*addr, target_size)?;
+                self.ram.poke(&self.eval_token(rvalue, target_size)?, addr.as_integer().unwrap());
+            }
+            _ => return Err(Error::msg(format!("Invalid lvalue token for assignment: {:?}", lvalue)))
+        }
         Ok(())
+    }
+
+
+    fn emulate_instr(&mut self, instr: &Instr) -> Result<MachineState> {
+        let arg0_val = instr.arg0().and_then(|arg| self.eval_token(arg, instr.size));
+        let arg0 = instr.arg0();
+        let arg1 = instr.arg1().and_then(|arg| self.eval_token(arg, instr.size));
+        match instr.opcode {
+            Opcode::Hlt => return Ok(MachineState::Halt),
+            Opcode::Nop => {},
+            Opcode::Und => panic!("Program entered explicit undefined behavior"),
+            Opcode::Mov => {
+                self.assign_with_token(arg0?, arg1?, instr.size)?;
+            }
+            Opcode::Push => {
+                self.push(arg0_val?);
+            }
+            Opcode::Pop => {
+                let rvalue = self.pop(instr.size);
+                self.assign_with_token(arg0?, rvalue, instr.size)?;
+            }
+            Opcode::Add => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.add(&arg1?)?, instr.size)?;
+            }
+            Opcode::Sub => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.sub(&arg1?)?, instr.size)?;
+            }
+            Opcode::Mul => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.mul(&arg1?)?, instr.size)?;
+            }
+            Opcode::Div => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.div(&arg1?)?, instr.size)?;
+            }
+            Opcode::Mod => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.rem(&arg1?)?, instr.size)?;
+            }
+            Opcode::And => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.bitand(&arg1?)?, instr.size)?;
+            }
+            Opcode::Or => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.bitor(&arg1?)?, instr.size)?;
+            }
+            Opcode::Xor => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.bitxor(&arg1?)?, instr.size)?;
+            }
+            Opcode::Shl => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.shl(&arg1?)?, instr.size)?;
+            }
+            Opcode::Shr => {
+                let arg0 = arg0?;
+                self.assign_with_token(arg0.clone(), arg0.shr(&arg1?)?, instr.size)?;
+            }
+            Opcode::Printi => {
+                println!("{}", arg0_val?.as_integer::<u128>().unwrap());
+            }
+            Opcode::Printc => {
+                print!("{}", std::str::from_utf8(&[arg0_val?.as_integer::<u8>().unwrap()]).unwrap());
+            }
+            Opcode::Call => {
+                self.push(Token::I64(self.regs.pc + instr.mc_size_in_bytes() as u64));
+                self.regs.pc = arg0_val?.as_integer().unwrap();
+                return Ok(MachineState::ContDontUpdatePc)
+            }
+            Opcode::Ret => {
+                self.regs.pc = self.pop(InstrSize::I64).as_integer().unwrap();
+                return Ok(MachineState::ContDontUpdatePc)
+            }
+            Opcode::Cmp | Opcode::Fcmp => { // todo: merge these
+                self.regs.fl.cmp(arg0?, arg1?);
+            }
+            Opcode::Jmp => {
+                self.regs.pc = arg0_val?.as_integer().unwrap();
+                return Ok(MachineState::ContDontUpdatePc)
+            }
+            Opcode::Jeq => {
+                if self.regs.fl.eq() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            Opcode::Jne => {
+                if !self.regs.fl.eq() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            Opcode::Jgt => {
+                if self.regs.fl.gt() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            Opcode::Jlt => {
+                if self.regs.fl.lt() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            Opcode::Jge => {
+                if self.regs.fl.gt() || self.regs.fl.eq() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            Opcode::Jle => {
+                if self.regs.fl.lt() || self.regs.fl.eq() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            Opcode::Jord => {
+                if self.regs.fl.ord() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            Opcode::Juno => {
+                if !self.regs.fl.ord() {
+                    self.regs.pc = arg0_val?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc)
+                }
+            }
+            // Opcode::Sdiv => todo!(),
+            // Opcode::Smod => todo!(),
+            // Opcode::Scmp => todo!(),
+            // Opcode::Junoeq => todo!(),
+            // Opcode::Junone => todo!(),
+            // Opcode::Junolt => todo!(),
+            // Opcode::Junogt => todo!(),
+            // Opcode::Junole => todo!(),
+            // Opcode::Junoge => todo!(),
+            // Opcode::Jordeq => todo!(),
+            // Opcode::Jordne => todo!(),
+            // Opcode::Jordlt => todo!(),
+            // Opcode::Jordgt => todo!(),
+            // Opcode::Jordle => todo!(),
+            // Opcode::Jordge => todo!(),
+            // Opcode::Sshr => todo!(),
+            // Opcode::Sext => todo!(),
+            
+            _ => todo!("{:?}", instr)
+        }
+        Ok(MachineState::Continue)
     }
 }

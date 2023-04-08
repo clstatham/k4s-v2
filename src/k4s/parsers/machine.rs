@@ -1,14 +1,14 @@
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take, is_a, take_until, take_until1},
-    combinator::{map, recognize, value, cut},
-    multi::{many0, many1},
+    bytes::complete::{tag, take, take_until1},
+    combinator::{map, recognize, value},
+    multi::{many0},
     sequence::tuple,
-    IResult, character::{complete::one_of}, error::dbg_dmp,
+    IResult,
 };
 use rustc_hash::FxHashMap;
 
-use crate::k4s::{Instr, InstrSize, Label, Opcode, Register, Token, Linkage, Primitive};
+use crate::k4s::{Instr, InstrSize, Opcode, Register, Token, Primitive};
 
 use self::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
 
@@ -66,7 +66,6 @@ pub fn parse_size(mc: &[u8]) -> IResult<&[u8], InstrSize> {
 }
 
 pub fn parse_literal(size: InstrSize, mc: &[u8]) -> IResult<&[u8], Token> {
-    use crate::k4s::Primitive;
     match size {
         InstrSize::Unsized => Ok((mc, Token::Unknown)),
         InstrSize::I8 => map(tuple((tag(&[LITERAL]), take(1_usize))), |res| {
@@ -120,7 +119,6 @@ pub fn parse_register(mc: &[u8]) -> IResult<&[u8], Token> {
 }
 
 pub fn parse_offset(mc: &[u8]) -> IResult<&[u8], Token> {
-    use crate::k4s::Primitive;
     map(
         tuple((tag(&[REGISTER_OFFSET]), take(8_usize), parse_register)),
         |res| {
@@ -212,6 +210,8 @@ pub fn parse_opcode(mc: &[u8]) -> IResult<&[u8], Opcode> {
             |mc| Opcode::Shr.parse_mc(mc),
             |mc| Opcode::Sshr.parse_mc(mc),
             |mc| Opcode::Sext.parse_mc(mc),
+            |mc| Opcode::Jge.parse_mc(mc),
+            |mc| Opcode::Jle.parse_mc(mc),
         )),
     ))(mc)
 }
