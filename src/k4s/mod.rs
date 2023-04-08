@@ -219,6 +219,26 @@ impl<T: Primitive + BitXor<T, Output = T>> BitXor<Prim<T>> for Prim<T> {
     }
 }
 
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum Linkage {
+    Linked(u64), // addr
+    NeedsLinking,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct Label {
+    pub name: String,
+    pub linkage: Linkage,
+}
+
+#[derive(Debug, Clone)]
+pub struct Data {
+    pub label: Label,
+    pub data: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Token {
     Unknown,
     I8(u8),
@@ -231,8 +251,48 @@ pub enum Token {
     Addr(Box<Token>),
     Offset(u64, Register),
     Register(Register),
-    Label(String),
-    Data(String),
+    Label(Label),
+    Data(Data),
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unknown => write!(f, "(UNKNOWN)"),
+            Self::I8(v) => write!(f, "{}", v),
+            Self::I16(v) => write!(f, "{}", v),
+            Self::I32(v) => write!(f, "{}", v),
+            Self::I64(v) => write!(f, "{}", v),
+            Self::I128(v) => write!(f, "{}", v),
+            Self::F32(v) => write!(f, "{}", v),
+            Self::F64(v) => write!(f, "{}", v),
+            Self::Addr(v) => write!(f, "[{}]", v),
+            Self::Offset(off, reg) => write!(f, "[{}+{}]", *off as i64, reg),
+            Self::Register(reg) => write!(f, "{}", reg),
+            Self::Label(lab) => write!(f, "%{}", lab.name),
+            Self::Data(dat) => write!(f, "@{}", dat.label.name),
+        }
+    }
+}
+
+impl Token {
+    pub const fn mc_size_in_bytes(&self) -> usize {
+        match self {
+            Self::I8(_) => 1 + 1,
+            Self::I16(_) => 2 + 1,
+            Self::I32(_) => 4 + 1,
+            Self::I64(_) => 8 + 1,
+            Self::I128(_) => 16 + 1,
+            Self::F32(_) => 4 + 1,
+            Self::F64(_) => 8 + 1,
+            Self::Label(_) => 8 + 1,
+            Self::Addr(adr) => 1 + adr.mc_size_in_bytes(),
+            Self::Data(_) => 8 + 1,
+            Self::Register(_) => 1,
+            Self::Offset(_, _) => 1 + 8 + 1,
+            Self::Unknown => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Hash)]
@@ -257,7 +317,7 @@ impl InstrSig {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Opcode {
     Nop = 0,
@@ -431,6 +491,21 @@ pub enum InstrSize {
     F64,
 }
 
+impl Display for InstrSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unsized => Ok(()),
+            Self::I8 => write!(f, "i8"),
+            Self::I16 => write!(f, "i16"),
+            Self::I32 => write!(f, "i32"),
+            Self::I64 => write!(f, "i64"),
+            Self::I128 => write!(f, "i128"),
+            Self::F32 => write!(f, "f32"),
+            Self::F64 => write!(f, "f64"),
+        }
+    }
+}
+
 impl InstrSize {
     pub const fn mc_repr(self) -> u8 {
         match self {
@@ -459,6 +534,68 @@ impl InstrSize {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Instr {
+    pub opcode: Opcode,
+    pub size: InstrSize,
+    pub arg0: Option<Token>,
+    pub arg1: Option<Token>,
+}
+
+impl Display for Instr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.opcode, self.size)?;
+        if let Some(ref arg) = self.arg0 {
+            write!(f, " {}", arg)?;
+        }
+        if let Some(ref arg) = self.arg1 {
+            write!(f, " {}", arg)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Instr {
+    pub fn signature(&self) -> InstrSig {
+        let arg0 = if let Some(arg0) = &self.arg0 {
+            match arg0 {
+                Token::Addr(_) | Token::Label(_) | Token::Data(_) => InstrSig::Adr,
+                _ => InstrSig::Val,
+            }
+        } else {
+            InstrSig::None
+        };
+        let arg1 = if let Some(arg1) = &self.arg1 {
+            match arg1 {
+                Token::Addr(_) | Token::Label(_) | Token::Data(_) => InstrSig::Adr,
+                _ => InstrSig::Val,
+            }
+        } else {
+            InstrSig::None
+        };
+        match (arg0, arg1) {
+            (InstrSig::Val, InstrSig::None) => InstrSig::Val,
+            (InstrSig::Adr, InstrSig::None) => InstrSig::Adr,
+            (InstrSig::Val, InstrSig::Val) => InstrSig::ValVal,
+            (InstrSig::Val, InstrSig::Adr) => InstrSig::ValAdr,
+            (InstrSig::Adr, InstrSig::Val) => InstrSig::AdrVal,
+            (InstrSig::Adr, InstrSig::Adr) => InstrSig::AdrAdr,
+            _ => unreachable!()
+        }
+    }
+
+    pub const fn mc_size_in_bytes(&self) -> usize {
+        let mut total = 2;
+        if let Some(ref arg) = self.arg0 {
+            total += arg.mc_size_in_bytes();
+        }
+        if let Some(ref arg) = self.arg1 {
+            total += arg.mc_size_in_bytes();
+        }
+        total
+    }
+}
 
 
 pub const ALL_REGS: &[Register] = &[

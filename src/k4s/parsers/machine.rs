@@ -6,9 +6,9 @@ use nom::{
     IResult,
 };
 
-use crate::k4s::{InstrSize, Opcode, Register, Token};
+use crate::k4s::{InstrSize, Opcode, Register, Token, Instr};
 
-use self::tags::{LITERAL, REGISTER_OFFSET};
+use self::tags::{LITERAL, REGISTER_OFFSET, ADDRESS};
 
 pub mod tags {
     pub const HEADER_MAGIC: &[u8] = b"k4d\x13\x37";
@@ -17,6 +17,7 @@ pub mod tags {
 
     pub const LITERAL: u8 = 0xff;
     pub const REGISTER_OFFSET: u8 = 0xfe;
+    pub const ADDRESS: u8 = 0xfd;
 }
 
 impl InstrSize {
@@ -87,6 +88,14 @@ pub fn parse_offset(mc: &[u8]) -> IResult<&[u8], Token> {
                 unreachable!()
             }
         },
+    )(mc)
+}
+
+pub fn parse_addr(mc: &[u8]) -> IResult<&[u8], Token> {
+    map(
+        tuple((tag(&[ADDRESS]),
+        |mc| disassemble_token(InstrSize::I64, mc),
+    )), |res| Token::Addr(Box::new(res.1))
     )(mc)
 }
 
@@ -167,18 +176,11 @@ pub fn parse_opcode(mc: &[u8]) -> IResult<&[u8], Opcode> {
 }
 
 pub fn disassemble_token(size: InstrSize, mc: &[u8]) -> IResult<&[u8], Token>{
-    alt((|mc| parse_literal(size, mc), parse_offset, parse_register))(mc)
+    alt((|mc| parse_literal(size, mc), parse_offset, parse_register, parse_addr))(mc)
 }
 
-pub struct MachineInstr {
-    pub opcode: Opcode,
-    pub size: InstrSize,
-    pub arg0: Option<Token>,
-    pub arg1: Option<Token>,
-}
-
-impl MachineInstr {
-    pub fn disassemble_next(mc: &[u8]) -> IResult<&[u8], MachineInstr> {
+impl Instr {
+    pub fn disassemble_next(mc: &[u8]) -> IResult<&[u8], Instr> {
         let (mc, opcode) = take(1_usize)(mc)?;
         let opcode = parse_opcode(opcode)?.1;
         let (mc, size) = take(1_usize)(mc)?;
@@ -195,7 +197,7 @@ impl MachineInstr {
         } else {
             (None, None)
         };
-        Ok((mc, MachineInstr {
+        Ok((mc, Instr {
             opcode,
             size,
             arg0,
