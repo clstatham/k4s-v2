@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fmt::Display};
 
 use anyhow::{Context, Error, Result};
 use rustc_hash::FxHashMap;
@@ -140,6 +140,26 @@ impl Regs {
     }
 }
 
+impl Display for Regs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "ra={:016x} rb={:016x} rc={:016x} rd={:016x} re={:016x} rf={:016x}",
+            self.ra, self.rb, self.rc, self.rd, self.re, self.rf
+        )?;
+        writeln!(
+            f,
+            "rg={:016x} rh={:016x} ri={:016x} rj={:016x} rk={:016x} rl={:016x}",
+            self.rg, self.rh, self.ri, self.rj, self.rk, self.rl
+        )?;
+        write!(
+            f,
+            "bp={:016x} sp={:016x} pc={:016x} fl={:016x}",
+            self.bp, self.sp, self.pc, self.fl
+        )
+    }
+}
+
 pub trait Ram {
     fn peek(&self, size: InstrSize, addr: u64) -> Token;
     fn poke(&mut self, t: &Token, addr: u64);
@@ -238,6 +258,16 @@ impl MachineContext {
         #[cfg(debug_assertions)]
         {
             // dbg!(&instr);
+            println!();
+            println!("{}", self.regs);
+            if let Some(tok) = &instr.arg0 {
+                let tok_eval = self.eval_token(tok.to_owned(), instr.size)?;
+                println!("arg0 = {:?} ({:?})", tok, tok_eval);
+            }
+            if let Some(tok) = &instr.arg1 {
+                let tok_eval = self.eval_token(tok.to_owned(), instr.size)?;
+                println!("arg1 = {:?} ({:?})", tok, tok_eval);
+            }
             println!(
                 "{:016x} --> {}",
                 self.regs.pc,
@@ -284,6 +314,7 @@ impl MachineContext {
     fn offset_to_addr(&self, token: Token) -> Token {
         if let Token::Offset(offset, reg) = token {
             Token::Addr(Box::new(Token::I64(
+                // Token::I64(
                 (self
                     .regs
                     .get(reg, InstrSize::I64)
@@ -291,6 +322,7 @@ impl MachineContext {
                     .as_integer::<u64>()
                     .unwrap() as i64
                     + offset) as u64,
+                // )
             )))
         } else {
             token
@@ -300,9 +332,6 @@ impl MachineContext {
     fn register_to_value(&self, token: Token, size: InstrSize) -> Token {
         if let Token::Register(reg) = token {
             let res = self.regs.get(reg, size);
-            if res.is_none() {
-                dbg!(token, size);
-            }
             res.unwrap()
         } else {
             token
@@ -325,7 +354,7 @@ impl MachineContext {
     fn eval_token(&self, token: Token, target_size: InstrSize) -> Result<Token> {
         let token = self.register_to_value(token, target_size);
         let token = self.offset_to_addr(token);
-        // let token = self.addr_to_value(token, target_size)?;
+        let token = self.addr_to_value(token, target_size)?;
         // the token should now be in integer (or floating point) form
         assert!(
             matches!(
@@ -375,15 +404,17 @@ impl MachineContext {
                     Ok(val)
                 } else {
                     Err(Error::msg(format!(
-                        "Error parsing first argument: {:?}",
-                        token
+                        "Error parsing first argument: {:?}\nInvalid token for instruction signature {:?}",
+                        token,
+                        instr.signature(),
                     )))
                 }
             }
             InstrSig::AdrVal | InstrSig::ValVal => self.eval_token(token, instr.size),
             _ => Err(Error::msg(format!(
-                "Error parsing first argument: {:?}",
-                token
+                "Error parsing first argument: {:?}\nInvalid instruction signature {:?}",
+                token,
+                instr.signature(),
             ))),
         }
     }
@@ -407,8 +438,9 @@ impl MachineContext {
                     Ok(())
                 }
                 _ => Err(Error::msg(format!(
-                    "Error parsing first argument: {:?}",
-                    lvalue
+                    "Error parsing first argument: {:?}\nInvalid token for instruction signature {:?}",
+                    lvalue,
+                    instr.signature(),
                 ))),
             },
             InstrSig::ValVal | InstrSig::ValAdr | InstrSig::Val => match lvalue {
@@ -418,14 +450,29 @@ impl MachineContext {
                     self.regs.set(reg, a);
                     Ok(())
                 }
+                Token::Offset(off, reg) => {
+                    let addr = self.offset_to_addr(lvalue);
+                    let addr = if let Token::Addr(addr) = addr {
+                        addr.as_integer().unwrap()
+                    } else {
+                        unreachable!()
+                    };
+                    // let value = self.addr_to_value(addr, instr.size).unwrap().as_integer().unwrap();
+                    let a = self.ram.peek(instr.size, addr);
+                    let a = f(&a)?;
+                    self.ram.poke(&a, addr);
+                    Ok(())
+                }
                 _ => Err(Error::msg(format!(
-                    "Error parsing first argument: {:?}",
-                    lvalue
+                    "Error parsing first argument: {:?}\nInvalid token for instruction signature {:?}",
+                    lvalue,
+                    instr.signature(),
                 ))),
             },
             _ => Err(Error::msg(format!(
-                "Error parsing first argument: {:?}",
-                lvalue
+                "Error parsing first argument: {:?}\nInvalid instruction signature {:?}",
+                lvalue,
+                instr.signature()
             ))),
         }
     }

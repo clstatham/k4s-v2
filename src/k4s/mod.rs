@@ -321,9 +321,10 @@ macro_rules! token_arith_impl {
                 (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
                 (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
                 (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
-                _ => Err(Error::msg(
-                    "token types must match and be numeric for arithmetic operations",
-                )),
+                _ => Err(Error::msg(format!(
+                    "token types must match and be numeric for arithmetic operations\nmismatched types: {:?} {:?}",
+                    self, rhs
+                ))),
             }
         }
     };
@@ -477,6 +478,21 @@ impl Token {
         }
     }
 
+    pub fn from_fp_size<T>(t: T, size: InstrSize) -> Option<Self>
+    where
+        T: TryInto<f32> + TryInto<f64>,
+    {
+        match size {
+            InstrSize::F32 => t.try_into().ok().map(Self::F32),
+            InstrSize::F64 => t.try_into().ok().map(Self::F64),
+            _ => None,
+        }
+    }
+
+    pub fn instr_size(&self) -> InstrSize {
+        InstrSize::from_integer_bits(self.value_size_in_bytes() as u32 * 8).unwrap()
+    }
+
     pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
         match self {
             Self::Addr(v) => format!("[{}]", v.display_with_symbols(symbols)),
@@ -504,7 +520,7 @@ impl Token {
             Self::Addr(_) => 8,
             Self::Data(_) => 8,
             Self::Register(_) => 8,
-            Self::Offset(_, _) => 9,
+            Self::Offset(_, _) => 8,
             Self::Unknown => 0,
         }
     }
@@ -743,6 +759,18 @@ impl Display for InstrSize {
 }
 
 impl InstrSize {
+    pub const fn from_integer_bits(bits: u32) -> Option<Self> {
+        match bits {
+            1 => Some(Self::I8),
+            8 => Some(Self::I8),
+            16 => Some(Self::I16),
+            32 => Some(Self::I32),
+            64 => Some(Self::I64),
+            128 => Some(Self::I128),
+            _ => None,
+        }
+    }
+
     pub const fn mc_repr(self) -> u8 {
         match self {
             Self::Unsized => Unsized::MACHINE_CODE,
@@ -879,7 +907,21 @@ pub const ALL_REGS: &[Register] = &[
     Register::Fl,
 ];
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, PartialOrd)]
+pub const GP_REGS: &[Register] = &[
+    Register::Rb,
+    Register::Rc,
+    Register::Rd,
+    Register::Re,
+    Register::Rf,
+    Register::Rg,
+    Register::Rh,
+    Register::Ri,
+    Register::Rj,
+    Register::Rk,
+    Register::Rl,
+];
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(u8)]
 pub enum Register {
     Rz = 0,

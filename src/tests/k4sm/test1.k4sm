@@ -1,18 +1,16 @@
 !ent 0x1000
-!include "src/tests/k4sm/inctest1.k4sm"
-!include "src/tests/k4sm/inctest2.k4sm"
+!include "src/tests/c/test1.k4sm"
 jmp i64 %start
 
 @hello align1 "Hi Guys!"
 
 %start
-    mov i32 ra $10000 ; i'm a comment!
-; i'm also a comment!
-    ; i'm an indented comment!
-    mov i64 [ra] $1337
-    printi i64 [ra]
-    mov i64 rg @hello
-    call i64 %printstrln
+    ; mov i64 rg @hello
+    ; call i64 %printstrln
+    mov i32 rg $42
+    mov i32 rh $69
+    call i64 %add
+    printi i32 ra
     hlt
 
 

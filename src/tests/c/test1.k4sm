@@ -1,0 +1,18 @@
+%add
+    push i64 bp
+    mov i64 bp sp
+%add_push_stack
+    sub i64 sp $12
+%add_push_params
+    mov i32 [-4+bp] rg
+    mov i32 [-8+bp] rh
+%add_2
+    mov i32 [-12+bp] [-8+bp]
+    add i32 [-12+bp] [-4+bp]
+    mov i32 ra [-12+bp]
+    jmp i64 %add_ret
+%add_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
