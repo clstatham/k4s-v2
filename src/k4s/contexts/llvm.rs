@@ -49,6 +49,7 @@ impl FunctionContext {
 
     pub fn push(&mut self, name: Name, ty: TypeRef) -> Ssa {
         self.stack_offset -= ty.as_ref().total_size_in_bytes() as i64;
+        self.stack_offset -= self.stack_offset.abs() % 8;
         let ssa = Ssa::new(
             name.to_owned(),
             ty,

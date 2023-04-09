@@ -219,10 +219,13 @@ impl AssemblyContext {
                         self.entry_point = *pc;
                     }
                     Header::Include(path) => {
-                        if !existing_includes.contains(&path.to_owned())
-                            && !self.included_modules.insert(path.to_owned())
+                        if !existing_includes
+                            .union(&self.included_modules)
+                            .collect::<FxHashSet<_>>()
+                            .contains(&path.to_owned())
                         {
-                            eprintln!("Warning, ignoring doubly-included path {path}");
+                            self.included_modules.insert(path.to_owned());
+                            // eprintln!("Warning, ignoring doubly-included path {path}");
                         }
                     }
                 }
@@ -268,7 +271,16 @@ impl AssemblyContext {
                 .context(format!("Error reading included file `{module_path}`"))?;
             let mut ctx = AssemblyContext::new(buf);
             let output = ctx
-                .assemble_impl(Some(self.pc), false, false, &self.included_modules)
+                .assemble_impl(
+                    Some(self.pc),
+                    false,
+                    false,
+                    &self
+                        .included_modules
+                        .union(existing_includes)
+                        .cloned()
+                        .collect::<FxHashSet<_>>(),
+                )
                 .context(format!(
                     "Error while assembling included file `{module_path}`"
                 ))?;

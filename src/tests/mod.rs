@@ -30,17 +30,18 @@ pub fn test_llvm_1() -> Result<()> {
             "-emit-llvm",
             "-o",
             "src/tests/c/test1.bc",
-            "-O3",
+            "-O0",
         ])
         .status()?;
     assert!(status.success());
     let mut ctx = LlvmContext::load("src/tests/c/test1.bc");
     let asm = ctx.lower()?;
     println!("{}", asm);
+    {
+        let mut file = File::create("src/tests/c/test1.k4sm")?;
+        file.write_all(asm.as_bytes())?;
+    }
 
-    let mut file = File::create("src/tests/c/test1.k4sm")?;
-    file.write_all(asm.as_bytes())?;
-    drop(file);
     let asm = include_str!("k4sm/test1.k4sm");
     let mut assembler = AssemblyContext::new(asm.to_owned());
     let program = assembler.assemble()?;

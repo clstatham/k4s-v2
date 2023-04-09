@@ -1,16 +1,14 @@
 !ent 0x1000
 !include "src/tests/c/test1.k4sm"
+!include "src/tests/k4sm/inctest1.k4sm"
 jmp i64 %start
 
 @hello align1 "Hi Guys!"
 
 %start
-    ; mov i64 rg @hello
-    ; call i64 %printstrln
+    ; computes the sum of 42 and 69
     mov i32 rg $42
     mov i32 rh $69
-    call i64 %add
+    call i64 %sum
     printi i32 ra
     hlt
-
-

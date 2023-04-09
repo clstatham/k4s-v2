@@ -258,17 +258,17 @@ impl MachineContext {
         #[cfg(debug_assertions)]
         {
             // dbg!(&instr);
-            println!();
-            println!("{}", self.regs);
+            eprintln!();
+            eprintln!("{}", self.regs);
             if let Some(tok) = &instr.arg0 {
                 let tok_eval = self.eval_token(tok.to_owned(), instr.size)?;
-                println!("arg0 = {:?} ({:?})", tok, tok_eval);
+                eprintln!("arg0 = {:?} ({:x?})", tok, tok_eval);
             }
             if let Some(tok) = &instr.arg1 {
                 let tok_eval = self.eval_token(tok.to_owned(), instr.size)?;
-                println!("arg1 = {:?} ({:?})", tok, tok_eval);
+                eprintln!("arg1 = {:?} ({:x?})", tok, tok_eval);
             }
-            println!(
+            eprintln!(
                 "{:016x} --> {}",
                 self.regs.pc,
                 &instr.display_with_symbols(&self.debug_symbols)
@@ -314,7 +314,6 @@ impl MachineContext {
     fn offset_to_addr(&self, token: Token) -> Token {
         if let Token::Offset(offset, reg) = token {
             Token::Addr(Box::new(Token::I64(
-                // Token::I64(
                 (self
                     .regs
                     .get(reg, InstrSize::I64)
@@ -322,7 +321,6 @@ impl MachineContext {
                     .as_integer::<u64>()
                     .unwrap() as i64
                     + offset) as u64,
-                // )
             )))
         } else {
             token
@@ -338,11 +336,33 @@ impl MachineContext {
         }
     }
 
-    fn addr_to_value(&self, token: Token, target_size: InstrSize) -> Result<Token> {
+    fn peek_addr(&self, token: Token, target_size: InstrSize) -> Result<Token> {
+        if let Token::Addr(ref tok) = token {
+            // let addr = self.eval_token(*tok.to_owned(), InstrSize::I64)?;
+            if let Token::I64(addr) = **tok {
+                Ok(self.ram.peek(target_size, addr))
+            } else if let Token::Register(reg) = **tok {
+                Ok(self.ram.peek(
+                    target_size,
+                    self.regs
+                        .get(reg, target_size)
+                        .unwrap()
+                        .as_integer()
+                        .unwrap(),
+                ))
+            } else {
+                Err(Error::msg(format!("Error parsing addr token: {:?}", token)))
+            }
+        } else {
+            Ok(token)
+        }
+    }
+
+    fn addr_to_value(&self, token: Token) -> Result<Token> {
         if let Token::Addr(ref tok) = token {
             let addr = self.eval_token(*tok.to_owned(), InstrSize::I64)?;
-            if let Token::I64(addr) = addr {
-                Ok(self.ram.peek(target_size, addr))
+            if let Token::I64(_) = addr {
+                Ok(addr)
             } else {
                 Err(Error::msg(format!("Error parsing addr token: {:?}", token)))
             }
@@ -354,7 +374,7 @@ impl MachineContext {
     fn eval_token(&self, token: Token, target_size: InstrSize) -> Result<Token> {
         let token = self.register_to_value(token, target_size);
         let token = self.offset_to_addr(token);
-        let token = self.addr_to_value(token, target_size)?;
+        let token = self.peek_addr(token, target_size)?;
         // the token should now be in integer (or floating point) form
         assert!(
             matches!(
@@ -377,7 +397,7 @@ impl MachineContext {
         match instr.signature() {
             InstrSig::AdrVal | InstrSig::AdrAdr | InstrSig::Adr => {
                 if let Token::Addr(_) = &token {
-                    let val = self.addr_to_value(token, instr.size)?;
+                    let val = self.peek_addr(token, instr.size)?;
                     Ok(val)
                 } else {
                     Err(Error::msg(format!(
@@ -396,29 +416,6 @@ impl MachineContext {
         }
     }
 
-    fn read1(&self, token: Token, instr: &Instr) -> Result<Token> {
-        match instr.signature() {
-            InstrSig::ValAdr | InstrSig::AdrAdr => {
-                if let Token::Addr(_) = &token {
-                    let val = self.addr_to_value(token, instr.size)?;
-                    Ok(val)
-                } else {
-                    Err(Error::msg(format!(
-                        "Error parsing first argument: {:?}\nInvalid token for instruction signature {:?}",
-                        token,
-                        instr.signature(),
-                    )))
-                }
-            }
-            InstrSig::AdrVal | InstrSig::ValVal => self.eval_token(token, instr.size),
-            _ => Err(Error::msg(format!(
-                "Error parsing first argument: {:?}\nInvalid instruction signature {:?}",
-                token,
-                instr.signature(),
-            ))),
-        }
-    }
-
     fn assign_lvalue_with(
         &mut self,
         lvalue: Token,
@@ -428,10 +425,10 @@ impl MachineContext {
         match instr.signature() {
             InstrSig::AdrAdr | InstrSig::AdrVal | InstrSig::Adr => match lvalue {
                 Token::Addr(ref addr) => {
-                    let addr = self
-                        .eval_token(*addr.to_owned(), InstrSize::I64)?
-                        .as_integer()
-                        .unwrap();
+                    let addr = match *addr.to_owned() {
+                        Token::Register(reg) => self.regs.get(reg, InstrSize::I64).unwrap().as_integer().unwrap(),
+                        _ => addr.as_integer().unwrap(),
+                    };
                     let a = self.ram.peek(instr.size, addr);
                     let a = f(&a)?;
                     self.ram.poke(&a, addr);
@@ -450,13 +447,9 @@ impl MachineContext {
                     self.regs.set(reg, a);
                     Ok(())
                 }
-                Token::Offset(off, reg) => {
+                Token::Offset(..) => {
                     let addr = self.offset_to_addr(lvalue);
-                    let addr = if let Token::Addr(addr) = addr {
-                        addr.as_integer().unwrap()
-                    } else {
-                        unreachable!()
-                    };
+                    let addr = self.addr_to_value(addr)?.as_integer().unwrap();
                     // let value = self.addr_to_value(addr, instr.size).unwrap().as_integer().unwrap();
                     let a = self.ram.peek(instr.size, addr);
                     let a = f(&a)?;
@@ -478,9 +471,10 @@ impl MachineContext {
     }
 
     fn emulate_instr(&mut self, instr: &Instr) -> Result<MachineState> {
-        // let arg0_val = instr.arg0().and_then(|arg| self.read0(arg, instr));
         let arg0 = instr.arg0();
-        let arg1 = instr.arg1().and_then(|arg| self.read1(arg, instr));
+        let arg1 = instr
+            .arg1()
+            .and_then(|arg| self.eval_token(arg, instr.size));
         match instr.opcode {
             Opcode::Hlt => return Ok(MachineState::Halt),
             Opcode::Nop => {}

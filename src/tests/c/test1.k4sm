@@ -1,17 +1,29 @@
-%add
+%sum
     push i64 bp
     mov i64 bp sp
-%add_push_stack
-    sub i64 sp $12
-%add_push_params
-    mov i32 [-4+bp] rg
-    mov i32 [-8+bp] rh
-%add_2
-    mov i32 [-12+bp] [-8+bp]
-    add i32 [-12+bp] [-4+bp]
-    mov i32 ra [-12+bp]
-    jmp i64 %add_ret
-%add_ret
+%sum_push_stack
+    sub i64 sp $72
+%sum_push_params
+    mov i32 [-8+bp] rg
+    mov i32 [-16+bp] rh
+%sum_2
+    mov i64 [-32+bp] bp
+    sub i64 [-32+bp] $24
+    mov i64 [-48+bp] bp
+    sub i64 [-48+bp] $40
+    mov i64 rb [-32+bp]
+    mov i64 [rb] [-8+bp]
+    mov i64 rb [-48+bp]
+    mov i64 [rb] [-16+bp]
+    mov i64 rb [-32+bp]
+    mov i32 [-56+bp] [rb]
+    mov i64 rb [-48+bp]
+    mov i32 [-64+bp] [rb]
+    mov i32 [-72+bp] [-56+bp]
+    add i32 [-72+bp] [-64+bp]
+    mov i32 ra [-72+bp]
+    jmp i64 %sum_ret
+%sum_ret
     mov i64 sp bp
     pop i64 bp
     ret 
