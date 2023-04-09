@@ -236,14 +236,14 @@ pub struct Label {
     pub linkage: Linkage,
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash)]
 pub struct Data {
     pub label: Label,
     pub align: usize,
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Unknown,
     I8(u8),
@@ -258,6 +258,36 @@ pub enum Token {
     Register(Register),
     Label(Label),
     Data(Data),
+}
+
+impl PartialOrd for Token {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::I8(a), Self::I8(b)) => Some(a.cmp(b)),
+            (Self::I16(a), Self::I16(b)) => Some(a.cmp(b)),
+            (Self::I32(a), Self::I32(b)) => Some(a.cmp(b)),
+            (Self::I64(a), Self::I64(b)) => Some(a.cmp(b)),
+            (Self::I128(a), Self::I128(b)) => Some(a.cmp(b)),
+            (Self::F32(a), Self::F32(b)) => a.partial_cmp(b),
+            (Self::F64(a), Self::F64(b)) => a.partial_cmp(b),
+            _ => None
+        }
+    }
+}
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::I8(a), Self::I8(b)) => a.eq(b),
+            (Self::I16(a), Self::I16(b)) => a.eq(b),
+            (Self::I32(a), Self::I32(b)) => a.eq(b),
+            (Self::I64(a), Self::I64(b)) => a.eq(b),
+            (Self::I128(a), Self::I128(b)) => a.eq(b),
+            (Self::F32(a), Self::F32(b)) => a.eq(b),
+            (Self::F64(a), Self::F64(b)) => a.eq(b),
+            _ => false
+        }
+    }
 }
 
 impl Display for Token {
@@ -335,6 +365,19 @@ impl Token {
             Self::I32(v) => (*v).try_into().ok(),
             Self::I16(v) => (*v).try_into().ok(),
             Self::I8(v) => (*v).try_into().ok(),
+            _ => None,
+        }
+    }
+
+    pub fn from_integer_size<T>(t: T, size: InstrSize) -> Option<Self>
+    where
+        T: TryInto<u128> + TryInto<u64> + TryInto<u32> + TryInto<u16> + TryInto<u8> {
+        match size {
+            InstrSize::I8 => t.try_into().ok().map(Self::I8),
+            InstrSize::I16 => t.try_into().ok().map(Self::I16),
+            InstrSize::I32 => t.try_into().ok().map(Self::I32),
+            InstrSize::I64 => t.try_into().ok().map(Self::I64),
+            InstrSize::I128 => t.try_into().ok().map(Self::I128),
             _ => None,
         }
     }

@@ -172,6 +172,7 @@ impl AssemblyContext {
                                 cursor += 1;
                             }
                         }
+                        data.data.push(0);
                     } else {
                         return Err(Error::msg(format!("Expected closing `\"` after opening `\"` in data on line {line_no}")))
                     }
@@ -218,6 +219,7 @@ impl AssemblyContext {
                         )));
                     }
                     self.push_program_bytes(&dat.data);
+                    
                 }
                 ParsedLine::Instr(ins) => {
                     ins.assemble(self)?;

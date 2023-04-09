@@ -120,6 +120,17 @@ pub fn label(i: &str) -> IResult<&str, Token> {
     )(i)
 }
 
+pub fn data_tag(i: &str) -> IResult<&str, Token> {
+    map(tuple((
+        tag("@"),
+        many1(alt((
+            alpha1,
+            tag("_"),
+            tag("."),
+            recognize(|i| decimal(InstrSize::I64, i)),
+        ))))),|(_, label)| Token::Label(Label { name: label.join(""), linkage: Linkage::NeedsLinking}))(i)
+}
+
 pub fn data(i: &str) -> IResult<&str, Token> {
     map(
         tuple((
@@ -191,7 +202,7 @@ pub fn offset(i: &str) -> IResult<&str, Token> {
 }
 
 pub fn val(size: InstrSize, i: &str) -> IResult<&str, Token> {
-    alt((register, |i| literal(size, i), label, data))(i)
+    alt((register, |i| literal(size, i), label, data_tag))(i)
 }
 
 pub fn addr(i: &str) -> IResult<&str, Token> {
@@ -282,7 +293,7 @@ pub fn size(asm: &str) -> IResult<&str, InstrSize> {
 impl Token {
     pub fn assemble(&mut self, ctx: &mut AssemblyContext) {
         match self {
-            Token::I8(val) => ctx.push_program_bytes(&[LITERAL, InstrSize::I8.mc_repr(), *val]),
+            Token::I8(val) => ctx.push_program_bytes(&[LITERAL, *val]),
             Token::I16(val) => {
                 ctx.push_program_bytes(&[LITERAL]);
                 ctx.push_program_bytes(&val.to_bytes());
@@ -315,18 +326,6 @@ impl Token {
                 ctx.push_program_bytes(&(*off as u64).to_bytes());
                 ctx.push_program_bytes(&[reg.mc_repr()]);
             }
-            Token::Data(dat) => {
-                if let Some(linked_location) = ctx.linked_refs.get(&dat.label) {
-                    let linked_location = *linked_location;
-                    dat.label.linkage = Linkage::Linked(linked_location);
-                    ctx.push_program_bytes(&[LITERAL]);
-                    ctx.push_program_bytes(&linked_location.to_bytes());
-                } else {
-                    ctx.push_program_bytes(&[LITERAL]);
-                    ctx.unlinked_refs.insert(dat.label.to_owned(), ctx.pc);
-                    ctx.push_program_bytes(&[0; 8])
-                }
-            }
             Token::Label(lab) => {
                 if let Some(linked_location) = ctx.linked_refs.get(lab) {
                     let linked_location = *linked_location;
@@ -344,6 +343,7 @@ impl Token {
                 adr.assemble(ctx);
             }
             Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
+            _ => todo!(),
         }
     }
 }
@@ -383,21 +383,10 @@ impl Instr {
         }
     }
 
-    pub fn match_asm(self, asm: &str) -> IResult<&str, &str> {
-        let sig = |i| self.signature().match_asm(self.size, i);
-        let opcode = format!("{}", self.opcode);
-        let opcode = opcode.as_str();
-        if let InstrSize::Unsized = self.size {
-            recognize(tuple((tag(opcode), space0, sig)))(asm)
-        } else {
-            let size = self.size.asm_repr();
-            recognize(tuple((tag(opcode), space1, tag(size), space1, sig)))(asm)
-        }
-    }
-
     pub fn assemble(&mut self, ctx: &mut AssemblyContext) -> Result<()> {
         let opcode = self.opcode.mc_repr();
         let size = self.size.mc_repr();
+        let start = ctx.pc;
         ctx.push_program_bytes(&[opcode, size]);
         if let Some(ref mut arg) = self.arg0 {
             arg.assemble(ctx);
@@ -405,6 +394,8 @@ impl Instr {
         if let Some(ref mut arg) = self.arg1 {
             arg.assemble(ctx);
         }
+        let size = ctx.pc - start;
+        assert_eq!(size as usize, self.mc_size_in_bytes(), "{:?}", self);
 
         Ok(())
     }

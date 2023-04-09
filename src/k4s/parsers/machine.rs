@@ -112,7 +112,7 @@ pub fn parse_register(mc: &[u8]) -> IResult<&[u8], Token> {
             value(Register::Bp, |mc| Register::Bp.match_mc(mc)),
             value(Register::Sp, |mc| Register::Sp.match_mc(mc)),
             value(Register::Pc, |mc| Register::Pc.match_mc(mc)),
-            // doesn't make sense to offset the value of the flags register!
+            value(Register::Fl, |mc| Register::Fl.match_mc(mc)),
         )),
         Token::Register,
     )(mc)
@@ -140,7 +140,7 @@ pub fn parse_addr(mc: &[u8]) -> IResult<&[u8], Token> {
 
 impl Register {
     pub fn match_mc(self, mc: &[u8]) -> IResult<&[u8], &[u8]> {
-        recognize(tag(&[self as u8]))(mc)
+        recognize(tag(&[self.mc_repr()]))(mc)
     }
 
     pub fn parse_mc(self, mc: &[u8]) -> IResult<&[u8], Register> {
@@ -150,7 +150,7 @@ impl Register {
 
 impl Opcode {
     pub fn parse_mc(self, mc: &[u8]) -> IResult<&[u8], Opcode> {
-        value(self, |mc| recognize(tag(&[self as u8]))(mc))(mc)
+        value(self, |mc| recognize(tag(&[self.mc_repr()]))(mc))(mc)
     }
 }
 
@@ -215,6 +215,7 @@ pub fn parse_opcode(mc: &[u8]) -> IResult<&[u8], Opcode> {
         )),
     ))(mc)
 }
+
 
 pub fn disassemble_token(size: InstrSize, mc: &[u8]) -> IResult<&[u8], Token> {
     alt((
