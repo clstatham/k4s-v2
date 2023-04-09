@@ -1,4 +1,6 @@
 !ent 0x1000
+!include "src/tests/k4sm/inctest1.k4sm"
+!include "src/tests/k4sm/inctest2.k4sm"
 jmp i64 %start
 
 @hello align1 "Hi Guys!"
@@ -13,16 +15,4 @@ jmp i64 %start
     call i64 %printstrln
     hlt
 
-%printstrln
-    push i64 rb
-    mov i64 rb rg
-%printstrln_loop
-    cmp i8 [rb] rz
-    jeq i64 %printstrln_ret
-    printc i8 [rb]
-    add i64 rb $1
-    jmp i64 %printstrln_loop
-%printstrln_ret
-    printc i8 $0xa ; newline
-    pop i64 rb
-    ret
+

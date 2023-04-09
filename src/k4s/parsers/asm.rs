@@ -9,6 +9,7 @@ use nom::{
     sequence::{preceded, terminated, tuple},
     IResult,
 };
+use rustc_hash::FxHashSet;
 
 use crate::k4s::{
     contexts::asm::AssemblyContext, Data, Instr, InstrSig, InstrSize, Label, Linkage, Opcode,
@@ -341,7 +342,10 @@ impl Token {
                     ctx.push_program_bytes(&linked_location.to_bytes());
                 } else {
                     ctx.push_program_bytes(&[LITERAL]);
-                    ctx.unlinked_refs.insert(lab.to_owned(), ctx.pc);
+                    ctx.unlinked_refs
+                        .entry(lab.to_owned())
+                        .or_insert(FxHashSet::default())
+                        .insert(ctx.pc);
                     ctx.push_program_bytes(&[0; 8])
                 }
             }

@@ -1,6 +1,8 @@
+use std::{fs::File, io::Read};
+
 use anyhow::{Context, Error, Result};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
     parsers::{
@@ -41,6 +43,11 @@ impl ParsedLine {
                     } else {
                         return Err(Error::msg("Expected hex number after `!ent` tag"));
                     }
+                }
+                "!include" => {
+                    let rest = rest.strip_prefix('\"').unwrap_or(rest);
+                    let rest = rest.strip_suffix('\"').unwrap_or(rest);
+                    Header::Include(rest.to_owned())
                 }
                 _ => return Err(Error::msg(format!("Invalid header tag: {header}"))),
             };
@@ -108,7 +115,8 @@ impl ParsedLine {
 pub struct AssemblyContext {
     pub lines: Vec<ParsedLine>,
     pub linked_refs: FxHashMap<Label, u64>, // (label, addr found at)
-    pub unlinked_refs: FxHashMap<Label, u64>, // (label, addr found at)
+    pub unlinked_refs: FxHashMap<Label, FxHashSet<u64>>, // (label, addr found at)
+    pub included_modules: FxHashSet<String>,
     pub input: String,
     pub pc: u64,
     pub entry_point: u64,
@@ -121,6 +129,7 @@ impl AssemblyContext {
             lines: Vec::default(),
             linked_refs: FxHashMap::default(),
             unlinked_refs: FxHashMap::default(),
+            included_modules: FxHashSet::default(),
             input,
             pc: 0,
             entry_point: 0,
@@ -134,7 +143,21 @@ impl AssemblyContext {
     }
 
     pub fn assemble(&mut self) -> Result<Vec<u8>> {
+        self.assemble_impl(None, true, true, &FxHashSet::default())
+    }
+
+    fn assemble_impl(
+        &mut self,
+        entry_point: Option<u64>,
+        include_header: bool,
+        check_link: bool,
+        existing_includes: &FxHashSet<String>,
+    ) -> Result<Vec<u8>> {
         let mut in_header = true;
+        if let Some(entry_point) = entry_point {
+            self.entry_point = entry_point;
+            self.pc = entry_point;
+        }
         for (line_no, line) in self.input.lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
@@ -184,12 +207,24 @@ impl AssemblyContext {
                         "Found header line outside of header on line {line_no}: {line}"
                     )));
                 }
+
                 match header {
                     Header::Entry(pc) => {
+                        if entry_point.is_some() {
+                            return Err(Error::msg(format!(
+                                "Found entry point header line in non-main module on line {line_no}: {line}"
+                            )));
+                        }
                         self.pc = *pc;
                         self.entry_point = *pc;
                     }
-                    Header::Include(_path) => todo!(),
+                    Header::Include(path) => {
+                        if !existing_includes.contains(&path.to_owned())
+                            && !self.included_modules.insert(path.to_owned())
+                        {
+                            eprintln!("Warning, ignoring doubly-included path {path}");
+                        }
+                    }
                 }
             } else {
                 in_header = false;
@@ -222,22 +257,54 @@ impl AssemblyContext {
             }
         }
 
+        // parse included files
+        for module_path in self.included_modules.clone().iter() {
+            let mut file = File::open(module_path)
+                .context(format!("Error opening included file `{module_path}`"))?;
+            let mut buf = String::new();
+            file.read_to_string(&mut buf)
+                .context(format!("Error reading included file `{module_path}`"))?;
+            let mut ctx = AssemblyContext::new(buf);
+            let output = ctx
+                .assemble_impl(Some(self.pc), false, false, &self.included_modules)
+                .context(format!(
+                    "Error while assembling included file `{module_path}`"
+                ))?;
+            self.push_program_bytes(&output);
+            for (ref lab, adr) in ctx.linked_refs {
+                if self.linked_refs.insert(lab.to_owned(), adr).is_some() {
+                    return Err(Error::msg(format!(
+                        "Found duplicate label `{}` in included file `{module_path}`",
+                        lab.name
+                    )));
+                }
+            }
+            for (lab, adr) in ctx.unlinked_refs {
+                self.unlinked_refs.insert(lab, adr);
+            }
+        }
+
+        // if do_link {
         // one more linking phase, for the forward decls
         for line in lines.iter_mut() {
             if let ParsedLine::Instr(ins) = line {
                 if let Some(Token::Label(ref mut lab)) = ins.arg0 {
                     if lab.linkage == Linkage::NeedsLinking {
                         if let Some(link_location) = self.linked_refs.get(lab) {
-                            let ref_loc = self.unlinked_refs.remove(lab).unwrap_or_else(|| {
+                            let ref_locs = self.unlinked_refs.get_mut(lab).unwrap_or_else(|| {
                                 panic!(
                                     "Label {} needed linking, but wasn't in the unlinked refs",
                                     lab.name
                                 )
-                            }) as usize;
+                            });
                             lab.linkage = Linkage::Linked(*link_location);
-                            self.output[ref_loc - self.entry_point as usize
-                                ..ref_loc - self.entry_point as usize + 8]
-                                .copy_from_slice(&link_location.to_bytes());
+                            for ref_loc in ref_locs.drain() {
+                                let ref_loc = ref_loc as usize;
+                                self.output[ref_loc - self.entry_point as usize
+                                    ..ref_loc - self.entry_point as usize + 8]
+                                    .copy_from_slice(&link_location.to_bytes());
+                            }
+                            self.unlinked_refs.remove(lab);
                         } else {
                             return Err(Error::msg(format!(
                                 "Undefined reference to label {}",
@@ -249,16 +316,20 @@ impl AssemblyContext {
                 if let Some(Token::Label(ref mut lab)) = ins.arg1 {
                     if lab.linkage == Linkage::NeedsLinking {
                         if let Some(link_location) = self.linked_refs.get(lab) {
-                            let ref_loc = self.unlinked_refs.remove(lab).unwrap_or_else(|| {
+                            let ref_locs = self.unlinked_refs.get_mut(lab).unwrap_or_else(|| {
                                 panic!(
                                     "Label {} needed linking, but wasn't in the unlinked refs",
                                     lab.name
                                 )
-                            }) as usize;
+                            });
                             lab.linkage = Linkage::Linked(*link_location);
-                            self.output[ref_loc - self.entry_point as usize
-                                ..ref_loc - self.entry_point as usize + 8]
-                                .copy_from_slice(&link_location.to_bytes());
+                            for ref_loc in ref_locs.drain() {
+                                let ref_loc = ref_loc as usize;
+                                self.output[ref_loc - self.entry_point as usize
+                                    ..ref_loc - self.entry_point as usize + 8]
+                                    .copy_from_slice(&link_location.to_bytes());
+                            }
+                            self.unlinked_refs.remove(lab);
                         } else {
                             return Err(Error::msg(format!(
                                 "Undefined reference to label {}",
@@ -269,12 +340,15 @@ impl AssemblyContext {
                 }
             }
         }
-
-        if !self.unlinked_refs.is_empty() {
-            for lab in self.unlinked_refs.keys() {
+        // }
+        if check_link
+            && !self.unlinked_refs.is_empty()
+            && !self.unlinked_refs.values().all(|refs| refs.is_empty())
+        {
+            for (lab, refs) in self.unlinked_refs.iter() {
                 eprintln!(
-                    "Undefined reference to label {} after stage 2 of linking",
-                    lab.name
+                    "Undefined reference to label {} after stage 2 of linking\nRef locations:{:?}",
+                    lab.name, refs
                 );
             }
             return Err(Error::msg(
@@ -282,24 +356,28 @@ impl AssemblyContext {
             ));
         }
 
-        let mut final_out = Vec::new();
-        final_out.extend_from_slice(tags::HEADER_MAGIC);
-        final_out.extend_from_slice(tags::HEADER_ENTRY_POINT);
-        final_out.extend_from_slice(&self.entry_point.to_bytes());
-        final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_START);
-        for (label, addr) in self.linked_refs.iter() {
-            final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_ADDR);
-            final_out.extend_from_slice(&addr.to_bytes());
-            final_out.extend_from_slice(label.name.as_bytes());
-            final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_END);
+        if include_header {
+            let mut final_out = Vec::new();
+            final_out.extend_from_slice(tags::HEADER_MAGIC);
+            final_out.extend_from_slice(tags::HEADER_ENTRY_POINT);
+            final_out.extend_from_slice(&self.entry_point.to_bytes());
+            final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_START);
+            for (label, addr) in self.linked_refs.iter() {
+                final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_ADDR);
+                final_out.extend_from_slice(&addr.to_bytes());
+                final_out.extend_from_slice(label.name.as_bytes());
+                final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_END);
+            }
+            final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_END);
+            final_out.extend_from_slice(tags::HEADER_END);
+
+            final_out.extend_from_slice(&self.output);
+            self.output = final_out;
+            // println!("Assembled program is {} bytes long.", self.output.len());
+
+            Ok(self.output.clone())
+        } else {
+            Ok(self.output.clone())
         }
-        final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_END);
-        final_out.extend_from_slice(tags::HEADER_END);
-
-        final_out.extend_from_slice(&self.output);
-        self.output = final_out;
-        println!("Assembled program is {} bytes long.", self.output.len());
-
-        Ok(self.output.clone())
     }
 }
