@@ -3,112 +3,191 @@ use nom::{
     branch::alt,
     bytes::complete::tag,
     character::complete::{alpha1, char, one_of, space0, space1},
-    combinator::{opt, recognize, map, value},
+    combinator::{map, opt, recognize, value},
+    error::Error,
     multi::{many0, many1},
     sequence::{preceded, terminated, tuple},
-    IResult, error::Error,
+    IResult,
 };
 
+use crate::k4s::{
+    contexts::asm::AssemblyContext, Data, Instr, InstrSig, InstrSize, Label, Linkage, Opcode,
+    Primitive, Register, Token,
+};
 
-use crate::k4s::{InstrSig, InstrSize, Register, Token, Opcode, Primitive, contexts::asm::AssemblyContext, Instr, Label, Linkage, Data};
-
-use super::machine::tags::{LITERAL, REGISTER_OFFSET, ADDRESS};
-
+use super::machine::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
 
 pub fn decimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
-    map(many1(terminated(one_of("0123456789"), many0(char('_')))), |res| match size {
-        InstrSize::I8 => Token::I8(res.into_iter().collect::<String>().parse().unwrap()),
-        InstrSize::I16 => Token::I16(res.into_iter().collect::<String>().parse().unwrap()),
-        InstrSize::I32 => Token::I32(res.into_iter().collect::<String>().parse().unwrap()),
-        InstrSize::I64 => Token::I64(res.into_iter().collect::<String>().parse().unwrap()),
-        InstrSize::I128 => Token::I128(res.into_iter().collect::<String>().parse().unwrap()),
-        InstrSize::F32 => Token::F32(res.into_iter().collect::<String>().parse().unwrap()),
-        InstrSize::F64 => Token::F64(res.into_iter().collect::<String>().parse().unwrap()),
-        _ => unimplemented!(),
-    })(input)
+    map(
+        many1(terminated(one_of("0123456789"), many0(char('_')))),
+        |res| match size {
+            InstrSize::I8 => Token::I8(res.into_iter().collect::<String>().parse().unwrap()),
+            InstrSize::I16 => Token::I16(res.into_iter().collect::<String>().parse().unwrap()),
+            InstrSize::I32 => Token::I32(res.into_iter().collect::<String>().parse().unwrap()),
+            InstrSize::I64 => Token::I64(res.into_iter().collect::<String>().parse().unwrap()),
+            InstrSize::I128 => Token::I128(res.into_iter().collect::<String>().parse().unwrap()),
+            InstrSize::F32 => Token::F32(res.into_iter().collect::<String>().parse().unwrap()),
+            InstrSize::F64 => Token::F64(res.into_iter().collect::<String>().parse().unwrap()),
+            _ => unimplemented!(),
+        },
+    )(input)
 }
 
 pub fn hexadecimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
-    map(preceded(
-        alt((tag::<&str, &str, Error<&str>>("0x"), tag("0X"))),
-        recognize(many1(terminated(
-            one_of("0123456789abcdefABCDEF"),
-            many0(char('_')),
-        ))),
-    ), |res| match size {
-        InstrSize::I8 => Token::I8(u8::from_str_radix(res, 16).unwrap()),
-        InstrSize::I16 => Token::I16(u16::from_str_radix(res, 16).unwrap()),
-        InstrSize::I32 => Token::I32(u32::from_str_radix(res, 16).unwrap()),
-        InstrSize::I64 => Token::I64(u64::from_str_radix(res, 16).unwrap()),
-        InstrSize::I128 => Token::I128(u128::from_str_radix(res, 16).unwrap()),
-        _ => unimplemented!(),
-    })(input)
+    map(
+        preceded(
+            alt((tag::<&str, &str, Error<&str>>("0x"), tag("0X"))),
+            recognize(many1(terminated(
+                one_of("0123456789abcdefABCDEF"),
+                many0(char('_')),
+            ))),
+        ),
+        |res| match size {
+            InstrSize::I8 => Token::I8(u8::from_str_radix(res, 16).unwrap()),
+            InstrSize::I16 => Token::I16(u16::from_str_radix(res, 16).unwrap()),
+            InstrSize::I32 => Token::I32(u32::from_str_radix(res, 16).unwrap()),
+            InstrSize::I64 => Token::I64(u64::from_str_radix(res, 16).unwrap()),
+            InstrSize::I128 => Token::I128(u128::from_str_radix(res, 16).unwrap()),
+            _ => unimplemented!(),
+        },
+    )(input)
 }
 
 fn register(i: &str) -> IResult<&str, Token> {
-    map(alt((
-        value(Register::Rz, tag("rz")),
-        value(Register::Ra, tag("ra")),
-        value(Register::Rb, tag("rb")),
-        value(Register::Rc, tag("rc")),
-        value(Register::Rd, tag("rd")),
-        value(Register::Re, tag("re")),
-        value(Register::Rf, tag("rf")),
-        value(Register::Rg, tag("rg")),
-        value(Register::Rh, tag("rh")),
-        value(Register::Ri, tag("ri")),
-        value(Register::Rj, tag("rj")),
-        value(Register::Rk, tag("rk")),
-        value(Register::Rl, tag("rl")),
-        value(Register::Bp, tag("bp")),
-        value(Register::Sp, tag("sp")),
-        value(Register::Pc, tag("pc")),
-        value(Register::Fl, tag("fl")),
-    )), Token::Register)(i)
+    map(
+        alt((
+            value(Register::Rz, tag("rz")),
+            value(Register::Ra, tag("ra")),
+            value(Register::Rb, tag("rb")),
+            value(Register::Rc, tag("rc")),
+            value(Register::Rd, tag("rd")),
+            value(Register::Re, tag("re")),
+            value(Register::Rf, tag("rf")),
+            value(Register::Rg, tag("rg")),
+            value(Register::Rh, tag("rh")),
+            value(Register::Ri, tag("ri")),
+            value(Register::Rj, tag("rj")),
+            value(Register::Rk, tag("rk")),
+            value(Register::Rl, tag("rl")),
+            value(Register::Bp, tag("bp")),
+            value(Register::Sp, tag("sp")),
+            value(Register::Pc, tag("pc")),
+            value(Register::Fl, tag("fl")),
+        )),
+        Token::Register,
+    )(i)
 }
 
 pub fn literal(size: InstrSize, i: &str) -> IResult<&str, Token> {
-    map(tuple((tag("$"), alt((|i| hexadecimal(size, i), |i| decimal(size, i))))), |res| res.1)(i)
+    map(
+        tuple((
+            tag("$"),
+            alt((|i| hexadecimal(size, i), |i| decimal(size, i))),
+        )),
+        |res| res.1,
+    )(i)
 }
 
 pub fn header(i: &str) -> IResult<&str, &str> {
     recognize(tuple((
         tag("!"),
-        many1(alt((alpha1, tag("_"), tag("."), recognize(|i| decimal(InstrSize::I64, i))))),
+        many1(alt((
+            alpha1,
+            tag("_"),
+            tag("."),
+            recognize(|i| decimal(InstrSize::I64, i)),
+        ))),
     )))(i)
 }
 
 pub fn label(i: &str) -> IResult<&str, Token> {
-    map(tuple((
-        tag("%"),
-        many1(alt((alpha1, tag("_"), tag("."), recognize(|i| decimal(InstrSize::I64, i))))),
-    )), |res| Token::Label(Label { name: res.1.join(""), linkage: Linkage::NeedsLinking }))(i)
+    map(
+        tuple((
+            tag("%"),
+            many1(alt((
+                alpha1,
+                tag("_"),
+                tag("."),
+                recognize(|i| decimal(InstrSize::I64, i)),
+            ))),
+        )),
+        |res| {
+            Token::Label(Label {
+                name: res.1.join(""),
+                linkage: Linkage::NeedsLinking,
+            })
+        },
+    )(i)
 }
 
 pub fn data(i: &str) -> IResult<&str, Token> {
-    map(tuple((
-        tag("@"),
-        many1(alt((alpha1, tag("_"), tag("."), recognize(|i| decimal(InstrSize::I64, i))))),
-    )), |res| Token::Data(Data { label: Label { name: res.1.join(""), linkage: Linkage::NeedsLinking }, data: res.0.as_bytes().to_vec()} ))(i)
+    map(
+        tuple((
+            tag("@"),
+            many1(alt((
+                alpha1,
+                tag("_"),
+                tag("."),
+                recognize(|i| decimal(InstrSize::I64, i)),
+            ))),
+            space1,
+            
+            alt((
+                value(1, tag("align1")),
+                value(2, tag("align2")),
+                value(4, tag("align4")),
+                value(8, tag("align8")),
+                value(16, tag("align16")),
+                value(32, tag("align32")),
+                value(64, tag("align64")),
+                value(128, tag("align128")),
+                value(256, tag("align256")),
+                value(512, tag("align512")),
+                value(1024, tag("align1024")),
+                value(2048, tag("align2048")),
+                value(4096, tag("align4096")),
+            )),
+            space1,
+        )),
+        |(_, name, _, align, _)| {
+            Token::Data(Data {
+                label: Label {
+                    name: name.join(""),
+                    linkage: Linkage::NeedsLinking,
+                },
+                data: Vec::new(),
+                align,
+            })
+        },
+    )(i)
 }
 
 pub fn offset(i: &str) -> IResult<&str, Token> {
-    map(tuple((tag("["), opt(tag("-")), |i| decimal(InstrSize::I64, i), tag("+"), register, tag("]"))), |(_, neg, off, _, reg, _)| {
-        if let Token::I64(off) = off {
-            if let Token::Register(reg) = reg  {
-                if neg.is_some() {
-                    Token::Offset(-(off as i64), reg)
-                }
-                else {
-                    Token::Offset(off as i64, reg)
+    map(
+        tuple((
+            tag("["),
+            opt(tag("-")),
+            |i| decimal(InstrSize::I64, i),
+            tag("+"),
+            register,
+            tag("]"),
+        )),
+        |(_, neg, off, _, reg, _)| {
+            if let Token::I64(off) = off {
+                if let Token::Register(reg) = reg {
+                    if neg.is_some() {
+                        Token::Offset(-(off as i64), reg)
+                    } else {
+                        Token::Offset(off as i64, reg)
+                    }
+                } else {
+                    unreachable!()
                 }
             } else {
                 unreachable!()
             }
-        } else {
-            unreachable!()
-        }
-    })(i)
+        },
+    )(i)
 }
 
 pub fn val(size: InstrSize, i: &str) -> IResult<&str, Token> {
@@ -116,13 +195,13 @@ pub fn val(size: InstrSize, i: &str) -> IResult<&str, Token> {
 }
 
 pub fn addr(i: &str) -> IResult<&str, Token> {
-    map(tuple((tag("["), |a| val(InstrSize::I64, a), tag("]"))), |res| {
-        Token::Addr(Box::new(res.1))
-    })(i)
+    map(
+        tuple((tag("["), |a| val(InstrSize::I64, a), tag("]"))),
+        |res| Token::Addr(Box::new(res.1)),
+    )(i)
 }
 
-
-pub fn token(size: InstrSize, asm: &str) -> IResult<&str, Token>{
+pub fn token(size: InstrSize, asm: &str) -> IResult<&str, Token> {
     alt((|a| val(size, a), addr, offset))(asm)
 }
 
@@ -207,27 +286,27 @@ impl Token {
             Token::I16(val) => {
                 ctx.push_program_bytes(&[LITERAL]);
                 ctx.push_program_bytes(&val.to_bytes());
-            },
+            }
             Token::I32(val) => {
                 ctx.push_program_bytes(&[LITERAL]);
                 ctx.push_program_bytes(&val.to_bytes());
-            },
+            }
             Token::I64(val) => {
                 ctx.push_program_bytes(&[LITERAL]);
                 ctx.push_program_bytes(&val.to_bytes());
-            },
+            }
             Token::I128(val) => {
                 ctx.push_program_bytes(&[LITERAL]);
                 ctx.push_program_bytes(&val.to_bytes());
-            },
+            }
             Token::F32(val) => {
                 ctx.push_program_bytes(&[LITERAL]);
                 ctx.push_program_bytes(&val.to_bytes());
-            },
+            }
             Token::F64(val) => {
                 ctx.push_program_bytes(&[LITERAL]);
                 ctx.push_program_bytes(&val.to_bytes());
-            },
+            }
             Token::Register(reg) => {
                 ctx.push_program_bytes(&[reg.mc_repr()]);
             }
@@ -247,7 +326,7 @@ impl Token {
                     ctx.unlinked_refs.insert(dat.label.to_owned(), ctx.pc);
                     ctx.push_program_bytes(&[0; 8])
                 }
-            },
+            }
             Token::Label(lab) => {
                 if let Some(linked_location) = ctx.linked_refs.get(lab) {
                     let linked_location = *linked_location;
@@ -264,7 +343,7 @@ impl Token {
                 ctx.push_program_bytes(&[ADDRESS]);
                 adr.assemble(ctx);
             }
-            Token::Unknown => panic!("Attempt to assemble an unknown token") // todo: Err instead of panic
+            Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
         }
     }
 }
@@ -290,10 +369,20 @@ impl Opcode {
 }
 
 impl Instr {
-    pub const fn new(opcode: Opcode, size: InstrSize, arg0: Option<Token>, arg1: Option<Token>) -> Self {
-        Self { opcode, size, arg0, arg1 }
+    pub const fn new(
+        opcode: Opcode,
+        size: InstrSize,
+        arg0: Option<Token>,
+        arg1: Option<Token>,
+    ) -> Self {
+        Self {
+            opcode,
+            size,
+            arg0,
+            arg1,
+        }
     }
-    
+
     pub fn match_asm(self, asm: &str) -> IResult<&str, &str> {
         let sig = |i| self.signature().match_asm(self.size, i);
         let opcode = format!("{}", self.opcode);
@@ -302,13 +391,7 @@ impl Instr {
             recognize(tuple((tag(opcode), space0, sig)))(asm)
         } else {
             let size = self.size.asm_repr();
-            recognize(tuple((
-                tag(opcode),
-                space1,
-                tag(size),
-                space1,
-                sig,
-            )))(asm)
+            recognize(tuple((tag(opcode), space1, tag(size), space1, sig)))(asm)
         }
     }
 
@@ -319,10 +402,10 @@ impl Instr {
         if let Some(ref mut arg) = self.arg0 {
             arg.assemble(ctx);
         }
-        if let Some(ref mut arg) = self.arg1{
+        if let Some(ref mut arg) = self.arg1 {
             arg.assemble(ctx);
         }
-        
+
         Ok(())
     }
 }

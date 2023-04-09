@@ -207,6 +207,7 @@ impl MachineContext {
                 Ok(MachineState::Continue)
             }
             MachineState::ContDontUpdatePc => {
+                assert_ne!(self.regs.pc, 0, "jump to null address");
                 Ok(MachineState::Continue)
             }
             MachineState::Halt => Ok(MachineState::Halt)

@@ -1,7 +1,12 @@
 !ent 0x1000
 jmp i64 %start
+
+@hello align1 "Hi Guys!"
+
 %start
-    mov i32 ra $10000
-    mov i64 [ra] $420
+    mov i32 ra $10000 ; i'm a comment!
+; i'm also a comment!
+    ; i'm an indented comment!
+    mov i64 [ra] $1337
     printi i64 [ra]
     hlt

@@ -239,6 +239,7 @@ pub struct Label {
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Data {
     pub label: Label,
+    pub align: usize,
     pub data: Vec<u8>,
 }
 
@@ -362,7 +363,7 @@ impl Token {
             Self::F32(_) => 4,
             Self::F64(_) => 8,
             Self::Label(_) => 8,
-            Self::Addr(adr) => 8,
+            Self::Addr(_) => 8,
             Self::Data(_) => 8,
             Self::Register(_) => 8,
             Self::Offset(_, _) => 9,
