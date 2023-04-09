@@ -243,6 +243,8 @@ impl AssemblyContext {
                     }
                 }
                 ParsedLine::Data(dat) => {
+                    let align_adjust = dat.align - self.pc as usize % dat.align;
+                    self.push_program_bytes(&vec![0u8; align_adjust]);
                     if let Some(_old) = self.linked_refs.insert(dat.label.to_owned(), self.pc) {
                         return Err(Error::msg(format!(
                             "Found duplicate data label: {}",
@@ -284,7 +286,6 @@ impl AssemblyContext {
             }
         }
 
-        // if do_link {
         // one more linking phase, for the forward decls
         for line in lines.iter_mut() {
             if let ParsedLine::Instr(ins) = line {
@@ -340,7 +341,6 @@ impl AssemblyContext {
                 }
             }
         }
-        // }
         if check_link
             && !self.unlinked_refs.is_empty()
             && !self.unlinked_refs.values().all(|refs| refs.is_empty())
