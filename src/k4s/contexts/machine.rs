@@ -481,15 +481,12 @@ impl MachineContext {
             Opcode::Sext => {
                 self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.sext(instr.size).unwrap()))?
             }
-
-            Opcode::Sshr => {
-                self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.sshr(&arg1?).unwrap()))?
-            }
+            Opcode::Sshr => self.assign_lvalue_with(arg0?, instr, |arg0| arg0.sshr(&arg1?))?,
             Opcode::Sdiv => {
-                self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.sdiv(&arg1?).unwrap()))?;
+                self.assign_lvalue_with(arg0?, instr, |arg0| arg0.sdiv(&arg1?))?;
             }
             Opcode::Smod => {
-                self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.smod(&arg1?).unwrap()))?;
+                self.assign_lvalue_with(arg0?, instr, |arg0| arg0.smod(&arg1?))?;
             }
             Opcode::Printi => {
                 println!(
@@ -571,20 +568,78 @@ impl MachineContext {
                     return Ok(MachineState::ContDontUpdatePc);
                 }
             }
-            Opcode::Sdiv => todo!(),
-            Opcode::Smod => todo!(),
-            Opcode::Junoeq => todo!(),
-            Opcode::Junone => todo!(),
-            Opcode::Junolt => todo!(),
-            Opcode::Junogt => todo!(),
-            Opcode::Junole => todo!(),
-            Opcode::Junoge => todo!(),
-            Opcode::Jordeq => todo!(),
-            Opcode::Jordne => todo!(),
-            Opcode::Jordlt => todo!(),
-            Opcode::Jordgt => todo!(),
-            Opcode::Jordle => todo!(),
-            Opcode::Jordge => todo!(),
+            Opcode::Junoeq => {
+                if !self.regs.fl.ord() || self.regs.fl.eq() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Junone => {
+                if !self.regs.fl.ord() || !self.regs.fl.eq() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Junolt => {
+                if !self.regs.fl.ord() || self.regs.fl.lt() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Junogt => {
+                if !self.regs.fl.ord() || self.regs.fl.gt() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Junole => {
+                if !self.regs.fl.ord() || self.regs.fl.lt() || self.regs.fl.eq() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Junoge => {
+                if !self.regs.fl.ord() || self.regs.fl.gt() || self.regs.fl.eq() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Jordeq => {
+                if self.regs.fl.ord() && self.regs.fl.eq() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Jordne => {
+                if self.regs.fl.ord() && !self.regs.fl.eq() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Jordlt => {
+                if self.regs.fl.ord() && self.regs.fl.lt() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Jordgt => {
+                if self.regs.fl.ord() && self.regs.fl.gt() {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Jordle => {
+                if self.regs.fl.ord() && (self.regs.fl.lt() || self.regs.fl.eq()) {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
+            Opcode::Jordge => {
+                if self.regs.fl.ord() && (self.regs.fl.gt() || self.regs.fl.eq()) {
+                    self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                    return Ok(MachineState::ContDontUpdatePc);
+                }
+            }
         }
         Ok(MachineState::Continue)
     }
