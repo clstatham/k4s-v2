@@ -14,6 +14,7 @@ jmp i64 %start
     hlt
 
 %printstrln
+    push i64 rb
     mov i64 rb rg
 %printstrln_loop
     cmp i8 [rb] rz
@@ -22,6 +23,6 @@ jmp i64 %start
     add i64 rb $1
     jmp i64 %printstrln_loop
 %printstrln_ret
-    mov i8 [rb] $0xa
-    printc i8 [rb] ; newline
+    printc i8 $0xa ; newline
+    pop i64 rb
     ret

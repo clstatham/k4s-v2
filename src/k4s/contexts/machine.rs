@@ -51,6 +51,27 @@ impl Fl {
             }
         }
     }
+
+    pub fn scmp(&mut self, a: &Token, b: &Token) {
+        match a.scmp(b) {
+            Some(Ordering::Equal) => {
+                self.insert(Self::ORD | Self::EQ);
+            }
+            Some(Ordering::Greater) => {
+                self.insert(Self::ORD | Self::GT);
+                self.remove(Self::EQ);
+            }
+            Some(Ordering::Less) => {
+                self.insert(Self::ORD);
+                self.remove(Self::GT | Self::EQ);
+            }
+            None => {
+                self.remove(Self::ORD);
+                self.remove(Self::GT);
+                self.remove(Self::EQ);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -457,6 +478,19 @@ impl MachineContext {
             Opcode::Shr => {
                 self.assign_lvalue_with(arg0?, instr, |arg0| arg0.shr(&arg1?))?;
             }
+            Opcode::Sext => {
+                self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.sext(instr.size).unwrap()))?
+            }
+
+            Opcode::Sshr => {
+                self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.sshr(&arg1?).unwrap()))?
+            }
+            Opcode::Sdiv => {
+                self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.sdiv(&arg1?).unwrap()))?;
+            }
+            Opcode::Smod => {
+                self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.smod(&arg1?).unwrap()))?;
+            }
             Opcode::Printi => {
                 println!(
                     "{}",
@@ -479,9 +513,11 @@ impl MachineContext {
                 self.regs.pc = self.pop(InstrSize::I64).as_integer().unwrap();
                 return Ok(MachineState::ContDontUpdatePc);
             }
-            Opcode::Cmp | Opcode::Fcmp => {
-                // todo: merge these
+            Opcode::Cmp => {
                 self.regs.fl.cmp(&self.read0(arg0?, instr)?, &arg1?);
+            }
+            Opcode::Scmp => {
+                self.regs.fl.scmp(&self.read0(arg0?, instr)?, &arg1?);
             }
             Opcode::Jmp => {
                 self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
@@ -535,24 +571,20 @@ impl MachineContext {
                     return Ok(MachineState::ContDontUpdatePc);
                 }
             }
-            // Opcode::Sdiv => todo!(),
-            // Opcode::Smod => todo!(),
-            // Opcode::Scmp => todo!(),
-            // Opcode::Junoeq => todo!(),
-            // Opcode::Junone => todo!(),
-            // Opcode::Junolt => todo!(),
-            // Opcode::Junogt => todo!(),
-            // Opcode::Junole => todo!(),
-            // Opcode::Junoge => todo!(),
-            // Opcode::Jordeq => todo!(),
-            // Opcode::Jordne => todo!(),
-            // Opcode::Jordlt => todo!(),
-            // Opcode::Jordgt => todo!(),
-            // Opcode::Jordle => todo!(),
-            // Opcode::Jordge => todo!(),
-            // Opcode::Sshr => todo!(),
-            // Opcode::Sext => todo!(),
-            _ => todo!("{:?}", instr),
+            Opcode::Sdiv => todo!(),
+            Opcode::Smod => todo!(),
+            Opcode::Junoeq => todo!(),
+            Opcode::Junone => todo!(),
+            Opcode::Junolt => todo!(),
+            Opcode::Junogt => todo!(),
+            Opcode::Junole => todo!(),
+            Opcode::Junoge => todo!(),
+            Opcode::Jordeq => todo!(),
+            Opcode::Jordne => todo!(),
+            Opcode::Jordlt => todo!(),
+            Opcode::Jordgt => todo!(),
+            Opcode::Jordle => todo!(),
+            Opcode::Jordge => todo!(),
         }
         Ok(MachineState::Continue)
     }

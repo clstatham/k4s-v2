@@ -186,7 +186,6 @@ pub fn parse_opcode(mc: &[u8]) -> IResult<&[u8], Opcode> {
             |mc| Opcode::Xor.parse_mc(mc),
             |mc| Opcode::Cmp.parse_mc(mc),
             |mc| Opcode::Scmp.parse_mc(mc),
-            |mc| Opcode::Fcmp.parse_mc(mc),
         )),
         alt((
             |mc| Opcode::Jmp.parse_mc(mc),

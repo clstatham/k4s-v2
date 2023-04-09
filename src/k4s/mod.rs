@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fmt::Display,
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
 };
@@ -260,7 +261,7 @@ pub enum Token {
 }
 
 impl PartialOrd for Token {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
             (Self::I8(a), Self::I8(b)) => Some(a.cmp(b)),
             (Self::I16(a), Self::I16(b)) => Some(a.cmp(b)),
@@ -347,6 +348,25 @@ macro_rules! token_int_arith_impl {
     };
 }
 
+macro_rules! token_signed_int_arith_impl {
+    ($op:ident, $op2:ident) => {
+        pub fn $op(&self, rhs: &Self) -> Result<Self> {
+            match (self, rhs) {
+                (Self::I8(a), Self::I8(b)) => Ok(Self::I8((*a as i8).$op2(*b as i8) as u8)),
+                (Self::I16(a), Self::I16(b)) => Ok(Self::I16((*a as i16).$op2(*b as i16) as u16)),
+                (Self::I32(a), Self::I32(b)) => Ok(Self::I32((*a as i32).$op2(*b as i32) as u32)),
+                (Self::I64(a), Self::I64(b)) => Ok(Self::I64((*a as i64).$op2(*b as i64) as u64)),
+                (Self::I128(a), Self::I128(b)) => {
+                    Ok(Self::I128((*a as i128).$op2(*b as i128) as u128))
+                }
+                _ => Err(Error::msg(
+                    "token types must match and be integers for signed integer arithmetic operations",
+                )),
+            }
+        }
+    };
+}
+
 impl Token {
     token_arith_impl!(add);
     token_arith_impl!(sub);
@@ -358,6 +378,49 @@ impl Token {
     token_int_arith_impl!(bitxor);
     token_int_arith_impl!(shl);
     token_int_arith_impl!(shr);
+    token_signed_int_arith_impl!(sshr, shr);
+    token_signed_int_arith_impl!(smod, rem);
+    token_signed_int_arith_impl!(sdiv, div);
+
+    pub fn sext(&self, size: InstrSize) -> Option<Self> {
+        match (self, size) {
+            (Self::I8(_v), InstrSize::I16) => self
+                .as_signed_integer::<i8>()
+                .map(|v| Self::I16(v as i16 as u16)),
+            (Self::I8(_v), InstrSize::I32) => self
+                .as_signed_integer::<i8>()
+                .map(|v| Self::I32(v as i32 as u32)),
+            (Self::I8(_v), InstrSize::I64) => self
+                .as_signed_integer::<i8>()
+                .map(|v| Self::I64(v as i64 as u64)),
+            (Self::I8(_v), InstrSize::I128) => self
+                .as_signed_integer::<i8>()
+                .map(|v| Self::I128(v as i128 as u128)),
+
+            (Self::I16(_v), InstrSize::I32) => self
+                .as_signed_integer::<i16>()
+                .map(|v| Self::I32(v as i32 as u32)),
+            (Self::I16(_v), InstrSize::I64) => self
+                .as_signed_integer::<i16>()
+                .map(|v| Self::I64(v as i64 as u64)),
+            (Self::I16(_v), InstrSize::I128) => self
+                .as_signed_integer::<i16>()
+                .map(|v| Self::I128(v as i128 as u128)),
+
+            (Self::I32(_v), InstrSize::I64) => self
+                .as_signed_integer::<i32>()
+                .map(|v| Self::I64(v as i64 as u64)),
+            (Self::I32(_v), InstrSize::I128) => self
+                .as_signed_integer::<i32>()
+                .map(|v| Self::I128(v as i128 as u128)),
+
+            (Self::I64(_v), InstrSize::I128) => self
+                .as_signed_integer::<i64>()
+                .map(|v| Self::I128(v as i128 as u128)),
+
+            _ => None,
+        }
+    }
 
     pub fn as_integer<T>(&self) -> Option<T>
     where
@@ -369,6 +432,33 @@ impl Token {
             Self::I32(v) => (*v).try_into().ok(),
             Self::I16(v) => (*v).try_into().ok(),
             Self::I8(v) => (*v).try_into().ok(),
+            _ => None,
+        }
+    }
+
+    pub fn as_signed_integer<T>(&self) -> Option<T>
+    where
+        T: TryFrom<i128> + TryFrom<i64> + TryFrom<i32> + TryFrom<i16> + TryFrom<i8>,
+    {
+        match self {
+            Self::I128(v) => (*v as i128).try_into().ok(),
+            Self::I64(v) => (*v as i64).try_into().ok(),
+            Self::I32(v) => (*v as i32).try_into().ok(),
+            Self::I16(v) => (*v as i16).try_into().ok(),
+            Self::I8(v) => (*v as i8).try_into().ok(),
+            _ => None,
+        }
+    }
+
+    pub fn scmp(&self, other: &Self) -> Option<Ordering> {
+        match (self, other) {
+            (Self::I8(a), Self::I8(b)) => Some((*a as i8).cmp(&(*b as i8))),
+            (Self::I16(a), Self::I16(b)) => Some((*a as i16).cmp(&(*b as i16))),
+            (Self::I32(a), Self::I32(b)) => Some((*a as i32).cmp(&(*b as i32))),
+            (Self::I64(a), Self::I64(b)) => Some((*a as i64).cmp(&(*b as i64))),
+            (Self::I128(a), Self::I128(b)) => Some((*a as i128).cmp(&(*b as i128))),
+            (Self::F32(a), Self::F32(b)) => a.partial_cmp(b),
+            (Self::F64(a), Self::F64(b)) => a.partial_cmp(b),
             _ => None,
         }
     }
@@ -483,7 +573,6 @@ pub enum Opcode {
     Xor,
     Cmp,
     Scmp,
-    Fcmp,
     Jmp,
     Jgt,
     Jlt,
@@ -540,7 +629,6 @@ impl Opcode {
             Opcode::Xor => 2,
             Opcode::Cmp => 2,
             Opcode::Scmp => 2,
-            Opcode::Fcmp => 2,
             Opcode::Jmp => 1,
             Opcode::Jgt => 1,
             Opcode::Jlt => 1,
@@ -595,7 +683,6 @@ impl Display for Opcode {
             Self::Xor => "xor",
             Self::Cmp => "cmp",
             Self::Scmp => "scmp",
-            Self::Fcmp => "fcmp",
             Self::Jmp => "jmp",
             Self::Jgt => "jgt",
             Self::Jlt => "jlt",

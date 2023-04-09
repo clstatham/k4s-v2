@@ -248,7 +248,6 @@ pub fn opcode(asm: &str) -> IResult<&str, Opcode> {
             |asm| Opcode::Xor.parse_asm(asm),
             |asm| Opcode::Cmp.parse_asm(asm),
             |asm| Opcode::Scmp.parse_asm(asm),
-            |asm| Opcode::Fcmp.parse_asm(asm),
         )),
         alt((
             |asm| Opcode::Jmp.parse_asm(asm),
