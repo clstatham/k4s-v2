@@ -1,9 +1,12 @@
 use std::cmp::Ordering;
 
-use anyhow::{Result, Error, Context};
+use anyhow::{Context, Error, Result};
 use rustc_hash::FxHashMap;
 
-use crate::k4s::{Primitive, InstrSize, Token, Register, parsers::machine::{tags, parse_debug_symbols}, Instr, Opcode, InstrSig};
+use crate::k4s::{
+    parsers::machine::{parse_debug_symbols, tags},
+    Instr, InstrSig, InstrSize, Opcode, Primitive, Register, Token,
+};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Default)]
@@ -127,12 +130,12 @@ impl Ram for Box<[u8]> {
         match size {
             InstrSize::Unsized => panic!("Attempt to read a size of zero"),
             InstrSize::I8 => Token::I8(self[addr]),
-            InstrSize::I16 => Token::I16(u16::from_bytes(&self[addr..addr+2]).unwrap()),
-            InstrSize::I32 => Token::I32(u32::from_bytes(&self[addr..addr+4]).unwrap()),
-            InstrSize::F32 => Token::F32(f32::from_bytes(&self[addr..addr+4]).unwrap()),
-            InstrSize::I64 => Token::I64(u64::from_bytes(&self[addr..addr+8]).unwrap()),
-            InstrSize::F64 => Token::F64(f64::from_bytes(&self[addr..addr+8]).unwrap()),
-            InstrSize::I128 => Token::I128(u128::from_bytes(&self[addr..addr+16]).unwrap()),
+            InstrSize::I16 => Token::I16(u16::from_bytes(&self[addr..addr + 2]).unwrap()),
+            InstrSize::I32 => Token::I32(u32::from_bytes(&self[addr..addr + 4]).unwrap()),
+            InstrSize::F32 => Token::F32(f32::from_bytes(&self[addr..addr + 4]).unwrap()),
+            InstrSize::I64 => Token::I64(u64::from_bytes(&self[addr..addr + 8]).unwrap()),
+            InstrSize::F64 => Token::F64(f64::from_bytes(&self[addr..addr + 8]).unwrap()),
+            InstrSize::I128 => Token::I128(u128::from_bytes(&self[addr..addr + 16]).unwrap()),
         }
     }
 
@@ -140,13 +143,13 @@ impl Ram for Box<[u8]> {
         let addr = addr as usize;
         match t {
             Token::I8(v) => self[addr] = *v,
-            Token::I16(v) => self[addr..addr+2].copy_from_slice(&v.to_bytes()),
-            Token::I32(v) => self[addr..addr+4].copy_from_slice(&v.to_bytes()),
-            Token::F32(v) => self[addr..addr+4].copy_from_slice(&v.to_bytes()),
-            Token::I64(v) => self[addr..addr+8].copy_from_slice(&v.to_bytes()),
-            Token::F64(v) => self[addr..addr+8].copy_from_slice(&v.to_bytes()),
-            Token::I128(v) => self[addr..addr+16].copy_from_slice(&v.to_bytes()),
-            _ => panic!("Invalid token for writing: {:?}", t)
+            Token::I16(v) => self[addr..addr + 2].copy_from_slice(&v.to_bytes()),
+            Token::I32(v) => self[addr..addr + 4].copy_from_slice(&v.to_bytes()),
+            Token::F32(v) => self[addr..addr + 4].copy_from_slice(&v.to_bytes()),
+            Token::I64(v) => self[addr..addr + 8].copy_from_slice(&v.to_bytes()),
+            Token::F64(v) => self[addr..addr + 8].copy_from_slice(&v.to_bytes()),
+            Token::I128(v) => self[addr..addr + 16].copy_from_slice(&v.to_bytes()),
+            _ => panic!("Invalid token for writing: {:?}", t),
         }
     }
 }
@@ -154,7 +157,7 @@ impl Ram for Box<[u8]> {
 pub enum MachineState {
     Continue,
     ContDontUpdatePc, // used for jumps, calls, rets
-    Halt
+    Halt,
 }
 
 pub struct MachineContext {
@@ -168,39 +171,61 @@ impl MachineContext {
         let mut ram = vec![0u8; mem_size].into_boxed_slice();
         let mut regs = Regs::default();
         if &program[..tags::HEADER_MAGIC.len()] != tags::HEADER_MAGIC {
-            return Err(Error::msg(format!("Invalid k4s header tag: {:?} (expected {:?})", &program[..tags::HEADER_MAGIC.len()], tags::HEADER_MAGIC)));
+            return Err(Error::msg(format!(
+                "Invalid k4s header tag: {:?} (expected {:?})",
+                &program[..tags::HEADER_MAGIC.len()],
+                tags::HEADER_MAGIC
+            )));
         }
         let program = &program[tags::HEADER_MAGIC.len()..];
         if &program[..tags::HEADER_ENTRY_POINT.len()] != tags::HEADER_ENTRY_POINT {
-            return Err(Error::msg(format!("Invalid k4s entry point tag: {:?} (expected {:?})", &program[..tags::HEADER_ENTRY_POINT.len()], tags::HEADER_ENTRY_POINT)));
+            return Err(Error::msg(format!(
+                "Invalid k4s entry point tag: {:?} (expected {:?})",
+                &program[..tags::HEADER_ENTRY_POINT.len()],
+                tags::HEADER_ENTRY_POINT
+            )));
         }
         let program = &program[tags::HEADER_ENTRY_POINT.len()..];
         let entry_point = u64::from_bytes(&program[..8]).unwrap();
         let program = &program[8..];
 
-        let (program, debug_symbols) = parse_debug_symbols(program).map_err(|err| err.to_owned())?;
+        let (program, debug_symbols) =
+            parse_debug_symbols(program).map_err(|err| err.to_owned())?;
 
         if &program[..tags::HEADER_END.len()] != tags::HEADER_END {
             return Err(Error::msg("Invalid k4s header end tag"));
         }
         let program = &program[tags::HEADER_END.len()..];
-        ram[entry_point as usize .. entry_point as usize + program.len()].copy_from_slice(program);
+        ram[entry_point as usize..entry_point as usize + program.len()].copy_from_slice(program);
         regs.pc = entry_point;
         regs.sp = ram.len() as u64;
-        Ok(MachineContext { ram, regs, debug_symbols })
+        Ok(MachineContext {
+            ram,
+            regs,
+            debug_symbols,
+        })
     }
 
     pub fn step(&mut self) -> Result<MachineState> {
-        let chunk = &self.ram[self.regs.pc as usize .. self.regs.pc as usize + 64];
-        let (_, instr) = Instr::disassemble_next(chunk).map_err(|err| err.to_owned()).context(format!("Error parsing instruction\nFirst 16 bytes:\n{:?}", &chunk[..16]))?;
+        let chunk = &self.ram[self.regs.pc as usize..self.regs.pc as usize + 64];
+        let (_, instr) = Instr::disassemble_next(chunk)
+            .map_err(|err| err.to_owned())
+            .context(format!(
+                "Error parsing instruction\nFirst 16 bytes:\n{:?}",
+                &chunk[..16]
+            ))?;
         #[cfg(debug_assertions)]
         {
             // dbg!(&instr);
-            println!("{:016x} --> {}", self.regs.pc, &instr.display_with_symbols(&self.debug_symbols));
+            println!(
+                "{:016x} --> {}",
+                self.regs.pc,
+                &instr.display_with_symbols(&self.debug_symbols)
+            );
         }
-        
+
         if instr.opcode == Opcode::Hlt {
-            return Ok(MachineState::Halt)
+            return Ok(MachineState::Halt);
         }
 
         match self.emulate_instr(&instr)? {
@@ -212,14 +237,14 @@ impl MachineContext {
                 assert_ne!(self.regs.pc, 0, "jump to null address");
                 Ok(MachineState::Continue)
             }
-            MachineState::Halt => Ok(MachineState::Halt)
+            MachineState::Halt => Ok(MachineState::Halt),
         }
     }
 
     pub fn run_until_hlt(&mut self) -> Result<()> {
         loop {
             if let MachineState::Halt = self.step()? {
-                return Ok(())
+                return Ok(());
             }
         }
     }
@@ -237,7 +262,15 @@ impl MachineContext {
 
     fn offset_to_addr(&self, token: Token) -> Token {
         if let Token::Offset(offset, reg) = token {
-            Token::Addr(Box::new(Token::I64((self.regs.get(reg, InstrSize::I64).unwrap().as_integer::<u64>().unwrap() as i64 + offset) as u64)))
+            Token::Addr(Box::new(Token::I64(
+                (self
+                    .regs
+                    .get(reg, InstrSize::I64)
+                    .unwrap()
+                    .as_integer::<u64>()
+                    .unwrap() as i64
+                    + offset) as u64,
+            )))
         } else {
             token
         }
@@ -250,7 +283,6 @@ impl MachineContext {
                 dbg!(token, size);
             }
             res.unwrap()
-
         } else {
             token
         }
@@ -274,73 +306,108 @@ impl MachineContext {
         let token = self.offset_to_addr(token);
         // let token = self.addr_to_value(token, target_size)?;
         // the token should now be in integer (or floating point) form
-        assert!(matches!(token, Token::F32(_) | Token::F64(_) | Token::I8(_) | Token::I16(_) | Token::I32(_) | Token::I64(_) | Token::I128(_)), "{:?}", token);
+        assert!(
+            matches!(
+                token,
+                Token::F32(_)
+                    | Token::F64(_)
+                    | Token::I8(_)
+                    | Token::I16(_)
+                    | Token::I32(_)
+                    | Token::I64(_)
+                    | Token::I128(_)
+            ),
+            "{:?}",
+            token
+        );
         Ok(token)
     }
 
     fn read0(&self, token: Token, instr: &Instr) -> Result<Token> {
-        match instr.signature()  {
+        match instr.signature() {
             InstrSig::AdrVal | InstrSig::AdrAdr | InstrSig::Adr => {
                 if let Token::Addr(_) = &token {
                     let val = self.addr_to_value(token, instr.size)?;
                     Ok(val)
                 } else {
-                    Err(Error::msg(format!("Error parsing first argument: {:?}", token)))
+                    Err(Error::msg(format!(
+                        "Error parsing first argument: {:?}",
+                        token
+                    )))
                 }
             }
             InstrSig::ValAdr | InstrSig::ValVal | InstrSig::Val => {
                 self.eval_token(token, instr.size)
             }
-            _ => Err(Error::msg(format!("Error parsing first argument: {:?}", token)))
+            _ => Err(Error::msg(format!(
+                "Error parsing first argument: {:?}",
+                token
+            ))),
         }
     }
 
     fn read1(&self, token: Token, instr: &Instr) -> Result<Token> {
-        match instr.signature()  {
+        match instr.signature() {
             InstrSig::ValAdr | InstrSig::AdrAdr => {
                 if let Token::Addr(_) = &token {
                     let val = self.addr_to_value(token, instr.size)?;
                     Ok(val)
                 } else {
-                    Err(Error::msg(format!("Error parsing first argument: {:?}", token)))
+                    Err(Error::msg(format!(
+                        "Error parsing first argument: {:?}",
+                        token
+                    )))
                 }
             }
-            InstrSig::AdrVal | InstrSig::ValVal  => {
-                self.eval_token(token, instr.size)
-            }
-            _ => Err(Error::msg(format!("Error parsing first argument: {:?}", token)))
+            InstrSig::AdrVal | InstrSig::ValVal => self.eval_token(token, instr.size),
+            _ => Err(Error::msg(format!(
+                "Error parsing first argument: {:?}",
+                token
+            ))),
         }
     }
 
-    fn assign_lvalue_with(&mut self, lvalue: Token, instr: &Instr, f: impl FnOnce(&Token) -> Result<Token>) -> Result<()> {
+    fn assign_lvalue_with(
+        &mut self,
+        lvalue: Token,
+        instr: &Instr,
+        f: impl FnOnce(&Token) -> Result<Token>,
+    ) -> Result<()> {
         match instr.signature() {
-            InstrSig::AdrAdr | InstrSig::AdrVal | InstrSig::Adr => {
-                match lvalue {
-                    Token::Addr(ref addr) => {
-                        let addr = self.eval_token(*addr.to_owned(), InstrSize::I64)?.as_integer().unwrap();
-                        let a = self.ram.peek(instr.size, addr);
-                        let a = f(&a)?;
-                        self.ram.poke(&a, addr);
-                        Ok(())
-                    }
-                    _ => Err(Error::msg(format!("Error parsing first argument: {:?}", lvalue)))
+            InstrSig::AdrAdr | InstrSig::AdrVal | InstrSig::Adr => match lvalue {
+                Token::Addr(ref addr) => {
+                    let addr = self
+                        .eval_token(*addr.to_owned(), InstrSize::I64)?
+                        .as_integer()
+                        .unwrap();
+                    let a = self.ram.peek(instr.size, addr);
+                    let a = f(&a)?;
+                    self.ram.poke(&a, addr);
+                    Ok(())
                 }
-            }
-            InstrSig::ValVal | InstrSig::ValAdr | InstrSig::Val => {
-                match lvalue {
-                    Token::Register(reg) => {
-                        let a = self.regs.get(reg, instr.size).unwrap();
-                        let a = f(&a)?;
-                        self.regs.set(reg, a);
-                        Ok(())
-                    }
-                    _ => Err(Error::msg(format!("Error parsing first argument: {:?}", lvalue)))
+                _ => Err(Error::msg(format!(
+                    "Error parsing first argument: {:?}",
+                    lvalue
+                ))),
+            },
+            InstrSig::ValVal | InstrSig::ValAdr | InstrSig::Val => match lvalue {
+                Token::Register(reg) => {
+                    let a = self.regs.get(reg, instr.size).unwrap();
+                    let a = f(&a)?;
+                    self.regs.set(reg, a);
+                    Ok(())
                 }
-            }
-            _ => Err(Error::msg(format!("Error parsing first argument: {:?}", lvalue)))
+                _ => Err(Error::msg(format!(
+                    "Error parsing first argument: {:?}",
+                    lvalue
+                ))),
+            },
+            _ => Err(Error::msg(format!(
+                "Error parsing first argument: {:?}",
+                lvalue
+            ))),
         }
     }
-
 
     fn emulate_instr(&mut self, instr: &Instr) -> Result<MachineState> {
         // let arg0_val = instr.arg0().and_then(|arg| self.read0(arg, instr));
@@ -348,7 +415,7 @@ impl MachineContext {
         let arg1 = instr.arg1().and_then(|arg| self.read1(arg, instr));
         match instr.opcode {
             Opcode::Hlt => return Ok(MachineState::Halt),
-            Opcode::Nop => {},
+            Opcode::Nop => {}
             Opcode::Und => panic!("Program entered explicit undefined behavior"),
             Opcode::Mov => {
                 self.assign_lvalue_with(arg0?, instr, |_| arg1)?;
@@ -391,73 +458,81 @@ impl MachineContext {
                 self.assign_lvalue_with(arg0?, instr, |arg0| arg0.shr(&arg1?))?;
             }
             Opcode::Printi => {
-                println!("{}", self.read0(arg0?, instr)?.as_integer::<u128>().unwrap());
+                println!(
+                    "{}",
+                    self.read0(arg0?, instr)?.as_integer::<u128>().unwrap()
+                );
             }
             Opcode::Printc => {
-                print!("{}", std::str::from_utf8(&[self.read0(arg0?, instr)?.as_integer::<u8>().unwrap()]).unwrap());
+                print!(
+                    "{}",
+                    std::str::from_utf8(&[self.read0(arg0?, instr)?.as_integer::<u8>().unwrap()])
+                        .unwrap()
+                );
             }
             Opcode::Call => {
                 self.push(Token::I64(self.regs.pc + instr.mc_size_in_bytes() as u64));
                 self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                return Ok(MachineState::ContDontUpdatePc)
+                return Ok(MachineState::ContDontUpdatePc);
             }
             Opcode::Ret => {
                 self.regs.pc = self.pop(InstrSize::I64).as_integer().unwrap();
-                return Ok(MachineState::ContDontUpdatePc)
+                return Ok(MachineState::ContDontUpdatePc);
             }
-            Opcode::Cmp | Opcode::Fcmp => { // todo: merge these
+            Opcode::Cmp | Opcode::Fcmp => {
+                // todo: merge these
                 self.regs.fl.cmp(&self.read0(arg0?, instr)?, &arg1?);
             }
             Opcode::Jmp => {
                 self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                return Ok(MachineState::ContDontUpdatePc)
+                return Ok(MachineState::ContDontUpdatePc);
             }
             Opcode::Jeq => {
                 if self.regs.fl.eq() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             Opcode::Jne => {
                 if !self.regs.fl.eq() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             Opcode::Jgt => {
                 if self.regs.fl.gt() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             Opcode::Jlt => {
                 if self.regs.fl.lt() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             Opcode::Jge => {
                 if self.regs.fl.gt() || self.regs.fl.eq() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             Opcode::Jle => {
                 if self.regs.fl.lt() || self.regs.fl.eq() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             Opcode::Jord => {
                 if self.regs.fl.ord() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             Opcode::Juno => {
                 if !self.regs.fl.ord() {
                     self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
-                    return Ok(MachineState::ContDontUpdatePc)
+                    return Ok(MachineState::ContDontUpdatePc);
                 }
             }
             // Opcode::Sdiv => todo!(),
@@ -477,8 +552,7 @@ impl MachineContext {
             // Opcode::Jordge => todo!(),
             // Opcode::Sshr => todo!(),
             // Opcode::Sext => todo!(),
-            
-            _ => todo!("{:?}", instr)
+            _ => todo!("{:?}", instr),
         }
         Ok(MachineState::Continue)
     }

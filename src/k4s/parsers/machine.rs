@@ -2,13 +2,13 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take, take_until1},
     combinator::{map, recognize, value},
-    multi::{many0},
+    multi::many0,
     sequence::tuple,
     IResult,
 };
 use rustc_hash::FxHashMap;
 
-use crate::k4s::{Instr, InstrSize, Opcode, Register, Token, Primitive};
+use crate::k4s::{Instr, InstrSize, Opcode, Primitive, Register, Token};
 
 use self::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
 
@@ -27,12 +27,20 @@ pub mod tags {
 }
 
 pub fn debug_entry(mc: &[u8]) -> IResult<&[u8], (String, u64)> {
-    map(tuple((
-        tag(tags::HEADER_DEBUG_SYMBOLS_ENTRY_ADDR),
-        take(8_usize),
-        take_until1(tags::HEADER_DEBUG_SYMBOLS_ENTRY_END),
-        take(2_usize),
-    )), |res: (&[u8], &[u8], &[u8], &[u8])| (String::from_utf8(res.2.to_vec()).unwrap(), u64::from_bytes(res.1).unwrap()))(mc)
+    map(
+        tuple((
+            tag(tags::HEADER_DEBUG_SYMBOLS_ENTRY_ADDR),
+            take(8_usize),
+            take_until1(tags::HEADER_DEBUG_SYMBOLS_ENTRY_END),
+            take(2_usize),
+        )),
+        |res: (&[u8], &[u8], &[u8], &[u8])| {
+            (
+                String::from_utf8(res.2.to_vec()).unwrap(),
+                u64::from_bytes(res.1).unwrap(),
+            )
+        },
+    )(mc)
 }
 
 pub fn parse_debug_symbols(mc: &[u8]) -> IResult<&[u8], FxHashMap<u64, String>> {
@@ -215,7 +223,6 @@ pub fn parse_opcode(mc: &[u8]) -> IResult<&[u8], Opcode> {
         )),
     ))(mc)
 }
-
 
 pub fn disassemble_token(size: InstrSize, mc: &[u8]) -> IResult<&[u8], Token> {
     alt((

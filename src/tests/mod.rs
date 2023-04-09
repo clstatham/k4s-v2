@@ -2,7 +2,6 @@ use anyhow::Result;
 
 use crate::k4s::contexts::{asm::AssemblyContext, machine::MachineContext};
 
-
 // #[test]
 pub fn test_assemble_1() -> Result<()> {
     let asm = include_str!("k4sm/test1.k4sm");

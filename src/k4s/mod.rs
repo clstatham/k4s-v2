@@ -3,12 +3,12 @@ use std::{
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
 };
 
-use anyhow::{Result, Error};
+use anyhow::{Error, Result};
 
 use rustc_hash::FxHashMap;
 
-pub mod parsers;
 pub mod contexts;
+pub mod parsers;
 
 pub trait Primitive
 where
@@ -53,7 +53,7 @@ impl Primitive for u8 {
 impl Primitive for u16 {
     const MACHINE_CODE: u8 = 1 << 1;
     const ASM: &'static str = "i16";
-    
+
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() == 2 {
             Some(Self::from_le_bytes([bytes[0], bytes[1]]))
@@ -68,7 +68,7 @@ impl Primitive for u16 {
 impl Primitive for u32 {
     const MACHINE_CODE: u8 = 1 << 2;
     const ASM: &'static str = "i32";
-    
+
     fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() == 4 {
             Some(Self::from_le_bytes([
@@ -223,7 +223,6 @@ impl<T: Primitive + BitXor<T, Output = T>> BitXor<Prim<T>> for Prim<T> {
     }
 }
 
-
 #[derive(Debug, Eq, Hash, Clone, PartialEq, PartialOrd, Ord)]
 pub enum Linkage {
     Linked(u64), // addr
@@ -270,7 +269,7 @@ impl PartialOrd for Token {
             (Self::I128(a), Self::I128(b)) => Some(a.cmp(b)),
             (Self::F32(a), Self::F32(b)) => a.partial_cmp(b),
             (Self::F64(a), Self::F64(b)) => a.partial_cmp(b),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -285,7 +284,7 @@ impl PartialEq for Token {
             (Self::I128(a), Self::I128(b)) => a.eq(b),
             (Self::F32(a), Self::F32(b)) => a.eq(b),
             (Self::F64(a), Self::F64(b)) => a.eq(b),
-            _ => false
+            _ => false,
         }
     }
 }
@@ -321,7 +320,9 @@ macro_rules! token_arith_impl {
                 (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
                 (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
                 (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
-                _ => Err(Error::msg("token types must match and be numeric for arithmetic operations"))
+                _ => Err(Error::msg(
+                    "token types must match and be numeric for arithmetic operations",
+                )),
             }
         }
     };
@@ -338,7 +339,9 @@ macro_rules! token_int_arith_impl {
                 (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
                 // (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
                 // (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
-                _ => Err(Error::msg("token types must match and be integers for integer arithmetic operations"))
+                _ => Err(Error::msg(
+                    "token types must match and be integers for integer arithmetic operations",
+                )),
             }
         }
     };
@@ -358,7 +361,8 @@ impl Token {
 
     pub fn as_integer<T>(&self) -> Option<T>
     where
-        T: TryFrom<u128> + TryFrom<u64> + TryFrom<u32> + TryFrom<u16> + TryFrom<u8> {
+        T: TryFrom<u128> + TryFrom<u64> + TryFrom<u32> + TryFrom<u16> + TryFrom<u8>,
+    {
         match self {
             Self::I128(v) => (*v).try_into().ok(),
             Self::I64(v) => (*v).try_into().ok(),
@@ -371,7 +375,8 @@ impl Token {
 
     pub fn from_integer_size<T>(t: T, size: InstrSize) -> Option<Self>
     where
-        T: TryInto<u128> + TryInto<u64> + TryInto<u32> + TryInto<u16> + TryInto<u8> {
+        T: TryInto<u128> + TryInto<u64> + TryInto<u32> + TryInto<u16> + TryInto<u8>,
+    {
         match size {
             InstrSize::I8 => t.try_into().ok().map(Self::I8),
             InstrSize::I16 => t.try_into().ok().map(Self::I16),
@@ -392,7 +397,7 @@ impl Token {
                     format!("${}", v)
                 }
             }
-            _ => format!("{}", self)
+            _ => format!("{}", self),
         }
     }
 
@@ -702,11 +707,15 @@ impl Display for Instr {
 
 impl Instr {
     pub fn arg0(&self) -> Result<Token> {
-        self.arg0.clone().ok_or(Error::msg("no arg0 for instruction"))
+        self.arg0
+            .clone()
+            .ok_or(Error::msg("no arg0 for instruction"))
     }
 
     pub fn arg1(&self) -> Result<Token> {
-        self.arg1.clone().ok_or(Error::msg("no arg1 for instruction"))
+        self.arg1
+            .clone()
+            .ok_or(Error::msg("no arg1 for instruction"))
     }
 
     pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
@@ -747,7 +756,7 @@ impl Instr {
             (InstrSig::Val, InstrSig::Adr) => InstrSig::ValAdr,
             (InstrSig::Adr, InstrSig::Val) => InstrSig::AdrVal,
             (InstrSig::Adr, InstrSig::Adr) => InstrSig::AdrAdr,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -762,7 +771,6 @@ impl Instr {
         total
     }
 }
-
 
 pub const ALL_REGS: &[Register] = &[
     Register::Rz,

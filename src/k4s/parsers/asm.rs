@@ -2,7 +2,7 @@ use anyhow::Result;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, char, one_of, space0, space1},
+    character::complete::{alpha1, char, one_of, space1},
     combinator::{map, opt, recognize, value},
     error::Error,
     multi::{many0, many1},
@@ -121,14 +121,23 @@ pub fn label(i: &str) -> IResult<&str, Token> {
 }
 
 pub fn data_tag(i: &str) -> IResult<&str, Token> {
-    map(tuple((
-        tag("@"),
-        many1(alt((
-            alpha1,
-            tag("_"),
-            tag("."),
-            recognize(|i| decimal(InstrSize::I64, i)),
-        ))))),|(_, label)| Token::Label(Label { name: label.join(""), linkage: Linkage::NeedsLinking}))(i)
+    map(
+        tuple((
+            tag("@"),
+            many1(alt((
+                alpha1,
+                tag("_"),
+                tag("."),
+                recognize(|i| decimal(InstrSize::I64, i)),
+            ))),
+        )),
+        |(_, label)| {
+            Token::Label(Label {
+                name: label.join(""),
+                linkage: Linkage::NeedsLinking,
+            })
+        },
+    )(i)
 }
 
 pub fn data(i: &str) -> IResult<&str, Token> {
@@ -142,7 +151,6 @@ pub fn data(i: &str) -> IResult<&str, Token> {
                 recognize(|i| decimal(InstrSize::I64, i)),
             ))),
             space1,
-            
             alt((
                 value(1, tag("align1")),
                 value(2, tag("align2")),

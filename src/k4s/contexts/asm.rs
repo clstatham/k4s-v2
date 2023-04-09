@@ -1,11 +1,5 @@
 use anyhow::{Context, Error, Result};
-use nom::bytes::complete::{escaped, escaped_transform, take, tag, is_a};
-use nom::character::complete::alphanumeric1;
-use nom::combinator::map;
-use nom::multi::{many0, many1};
-use nom::sequence::{tuple, preceded};
-use nom::branch::alt;
-use nom::{IResult, AsBytes};
+
 use rustc_hash::FxHashMap;
 
 use crate::k4s::{
@@ -174,10 +168,12 @@ impl AssemblyContext {
                         }
                         data.data.push(0);
                     } else {
-                        return Err(Error::msg(format!("Expected closing `\"` after opening `\"` in data on line {line_no}")))
+                        return Err(Error::msg(format!(
+                            "Expected closing `\"` after opening `\"` in data on line {line_no}"
+                        )));
                     }
                 } else {
-                    return Err(Error::msg(format!("Invalid data on line {line_no}")))
+                    return Err(Error::msg(format!("Invalid data on line {line_no}")));
                 }
             } else if !junk.is_empty() && !junk.trim().starts_with(';') {
                 eprintln!("Warning: Ignoring junk after line {line_no}: {junk}");
@@ -219,7 +215,6 @@ impl AssemblyContext {
                         )));
                     }
                     self.push_program_bytes(&dat.data);
-                    
                 }
                 ParsedLine::Instr(ins) => {
                     ins.assemble(self)?;
