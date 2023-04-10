@@ -20,15 +20,67 @@ use super::machine::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
 
 pub fn decimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
     map(
-        many1(terminated(one_of("0123456789"), many0(char('_')))),
+        many1(terminated(
+            one_of("0123456789"),
+            many0(alt((char('_'), char('.')))),
+        )),
         |res| match size {
-            InstrSize::I8 => Token::I8(res.into_iter().collect::<String>().parse().unwrap()),
-            InstrSize::I16 => Token::I16(res.into_iter().collect::<String>().parse().unwrap()),
-            InstrSize::I32 => Token::I32(res.into_iter().collect::<String>().parse().unwrap()),
-            InstrSize::I64 => Token::I64(res.into_iter().collect::<String>().parse().unwrap()),
-            InstrSize::I128 => Token::I128(res.into_iter().collect::<String>().parse().unwrap()),
-            InstrSize::F32 => Token::F32(res.into_iter().collect::<String>().parse().unwrap()),
-            InstrSize::F64 => Token::F64(res.into_iter().collect::<String>().parse().unwrap()),
+            InstrSize::I8 => Token::I8(res.iter().collect::<String>().parse().unwrap_or_else(
+                |err| {
+                    panic!(
+                        "Error parsing I8: {}: {err}",
+                        res.into_iter().collect::<String>()
+                    )
+                },
+            )),
+            InstrSize::I16 => Token::I16(res.iter().collect::<String>().parse().unwrap_or_else(
+                |err| {
+                    panic!(
+                        "Error parsing I16: {}: {err}",
+                        res.into_iter().collect::<String>()
+                    )
+                },
+            )),
+            InstrSize::I32 => Token::I32(res.iter().collect::<String>().parse().unwrap_or_else(
+                |err| {
+                    panic!(
+                        "Error parsing I32: {}: {err}",
+                        res.into_iter().collect::<String>()
+                    )
+                },
+            )),
+            InstrSize::I64 => Token::I64(res.iter().collect::<String>().parse().unwrap_or_else(
+                |err| {
+                    panic!(
+                        "Error parsing I64: {}: {err}",
+                        res.into_iter().collect::<String>()
+                    )
+                },
+            )),
+            InstrSize::I128 => Token::I128(res.iter().collect::<String>().parse().unwrap_or_else(
+                |err| {
+                    panic!(
+                        "Error parsing I128: {}: {err}",
+                        res.into_iter().collect::<String>()
+                    )
+                },
+            )),
+            InstrSize::F32 => Token::F32(res.iter().collect::<String>().parse().unwrap_or_else(
+                |err| {
+                    panic!(
+                        "Error parsing F32: {}: {err}",
+                        res.into_iter().collect::<String>()
+                    )
+                },
+            )),
+            InstrSize::F64 => Token::F64(res.iter().collect::<String>().parse().unwrap_or_else(
+                |err| {
+                    panic!(
+                        "Error parsing F64: {}: {err}",
+                        res.into_iter().collect::<String>()
+                    )
+                },
+            )),
             _ => unimplemented!(),
         },
     )(input)
@@ -83,7 +135,15 @@ pub fn literal(size: InstrSize, i: &str) -> IResult<&str, Token> {
     map(
         tuple((
             tag("$"),
-            alt((|i| hexadecimal(size, i), |i| decimal(size, i))),
+            alt((
+                map(tag("NaN"), |_nan| match size {
+                    InstrSize::F32 => Token::F32(f32::NAN),
+                    InstrSize::F64 => Token::F64(f64::NAN),
+                    _ => unreachable!(),
+                }),
+                |i| hexadecimal(size, i),
+                |i| decimal(size, i),
+            )),
         )),
         |res| res.1,
     )(i)
@@ -109,6 +169,8 @@ pub fn label(i: &str) -> IResult<&str, Token> {
                 alpha1,
                 tag("_"),
                 tag("."),
+                tag("$"),
+                tag("-"),
                 recognize(|i| decimal(InstrSize::I64, i)),
             ))),
         )),
@@ -129,6 +191,8 @@ pub fn data_tag(i: &str) -> IResult<&str, Token> {
                 alpha1,
                 tag("_"),
                 tag("."),
+                tag("$"),
+                tag("-"),
                 recognize(|i| decimal(InstrSize::I64, i)),
             ))),
         )),
@@ -141,6 +205,40 @@ pub fn data_tag(i: &str) -> IResult<&str, Token> {
     )(i)
 }
 
+pub fn lab_offset_const(i: &str) -> IResult<&str, (Label, Token)> {
+    map(
+        tuple((
+            label,
+            space1,
+            tag("("),
+            opt(tag("-")),
+            |i| decimal(InstrSize::I64, i),
+            tag("+"),
+            label,
+            tag(")"),
+        )),
+        |(name, _, _, neg, off, _, lab, _)| {
+            if let Token::I64(off) = off {
+                if let Token::Label(lab) = lab {
+                    if let Token::Label(name) = name {
+                        if neg.is_some() {
+                            (name, Token::LabelOffset(-(off as i64), lab))
+                        } else {
+                            (name, Token::LabelOffset(off as i64, lab))
+                        }
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+        },
+    )(i)
+}
+
 pub fn data(i: &str) -> IResult<&str, Token> {
     map(
         tuple((
@@ -149,6 +247,8 @@ pub fn data(i: &str) -> IResult<&str, Token> {
                 alpha1,
                 tag("_"),
                 tag("."),
+                tag("$"),
+                tag("-"),
                 recognize(|i| decimal(InstrSize::I64, i)),
             ))),
             space1,
@@ -182,7 +282,7 @@ pub fn data(i: &str) -> IResult<&str, Token> {
     )(i)
 }
 
-pub fn offset(i: &str) -> IResult<&str, Token> {
+pub fn reg_offset(i: &str) -> IResult<&str, Token> {
     map(
         tuple((
             tag("["),
@@ -196,9 +296,37 @@ pub fn offset(i: &str) -> IResult<&str, Token> {
             if let Token::I64(off) = off {
                 if let Token::Register(reg) = reg {
                     if neg.is_some() {
-                        Token::Offset(-(off as i64), reg)
+                        Token::RegOffset(-(off as i64), reg)
                     } else {
-                        Token::Offset(off as i64, reg)
+                        Token::RegOffset(off as i64, reg)
+                    }
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+        },
+    )(i)
+}
+
+pub fn lab_offset(i: &str) -> IResult<&str, Token> {
+    map(
+        tuple((
+            tag("("),
+            opt(tag("-")),
+            |i| decimal(InstrSize::I64, i),
+            tag("+"),
+            label,
+            tag(")"),
+        )),
+        |(_, neg, off, _, lab, _)| {
+            if let Token::I64(off) = off {
+                if let Token::Label(lab) = lab {
+                    if neg.is_some() {
+                        Token::LabelOffset(-(off as i64), lab)
+                    } else {
+                        Token::LabelOffset(off as i64, lab)
                     }
                 } else {
                     unreachable!()
@@ -222,7 +350,7 @@ pub fn addr(i: &str) -> IResult<&str, Token> {
 }
 
 pub fn token(size: InstrSize, asm: &str) -> IResult<&str, Token> {
-    alt((|a| val(size, a), addr, offset))(asm)
+    alt((|a| val(size, a), addr, reg_offset, lab_offset))(asm)
 }
 
 pub fn opcode(asm: &str) -> IResult<&str, Opcode> {
@@ -256,22 +384,22 @@ pub fn opcode(asm: &str) -> IResult<&str, Opcode> {
             |asm| Opcode::Jlt.parse_asm(asm),
             |asm| Opcode::Jeq.parse_asm(asm),
             |asm| Opcode::Jne.parse_asm(asm),
-            |asm| Opcode::Juno.parse_asm(asm),
             |asm| Opcode::Junoeq.parse_asm(asm),
             |asm| Opcode::Junone.parse_asm(asm),
             |asm| Opcode::Junolt.parse_asm(asm),
             |asm| Opcode::Junogt.parse_asm(asm),
             |asm| Opcode::Junole.parse_asm(asm),
+            |asm| Opcode::Junoge.parse_asm(asm),
         )),
         alt((
-            |asm| Opcode::Junoge.parse_asm(asm),
-            |asm| Opcode::Jord.parse_asm(asm),
+            |asm| Opcode::Juno.parse_asm(asm),
             |asm| Opcode::Jordeq.parse_asm(asm),
             |asm| Opcode::Jordne.parse_asm(asm),
             |asm| Opcode::Jordlt.parse_asm(asm),
             |asm| Opcode::Jordgt.parse_asm(asm),
             |asm| Opcode::Jordle.parse_asm(asm),
             |asm| Opcode::Jordge.parse_asm(asm),
+            |asm| Opcode::Jord.parse_asm(asm),
             |asm| Opcode::Call.parse_asm(asm),
             |asm| Opcode::Ret.parse_asm(asm),
         )),
@@ -329,10 +457,25 @@ impl Token {
             Token::Register(reg) => {
                 ctx.push_program_bytes(&[reg.mc_repr()]);
             }
-            Token::Offset(off, reg) => {
+            Token::RegOffset(off, reg) => {
                 ctx.push_program_bytes(&[REGISTER_OFFSET]);
                 ctx.push_program_bytes(&(*off as u64).to_bytes());
                 ctx.push_program_bytes(&[reg.mc_repr()]);
+            }
+            Token::LabelOffset(off, lab) => {
+                if let Some(linked_location) = ctx.linked_refs.get(lab) {
+                    let offset_linked_location = (*linked_location as i64 + *off) as u64;
+                    lab.linkage = Linkage::Linked(*linked_location);
+                    ctx.push_program_bytes(&[LITERAL]);
+                    ctx.push_program_bytes(&offset_linked_location.to_bytes());
+                } else {
+                    ctx.push_program_bytes(&[LITERAL]);
+                    ctx.unlinked_offset_refs
+                        .entry((*off, lab.to_owned()))
+                        .or_insert(FxHashSet::default())
+                        .insert(ctx.pc);
+                    ctx.push_program_bytes(&[0; 8]);
+                }
             }
             Token::Label(lab) => {
                 if let Some(linked_location) = ctx.linked_refs.get(lab) {

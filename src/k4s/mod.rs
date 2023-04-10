@@ -236,6 +236,15 @@ pub struct Label {
     pub linkage: Linkage,
 }
 
+impl Label {
+    pub fn new_unlinked(name: String) -> Self {
+        Self {
+            name,
+            linkage: Linkage::NeedsLinking,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Hash)]
 pub struct Data {
     pub label: Label,
@@ -254,10 +263,11 @@ pub enum Token {
     F32(f32),
     F64(f64),
     Addr(Box<Token>),
-    Offset(i64, Register),
+    RegOffset(i64, Register),
     Register(Register),
     Label(Label),
     Data(Data),
+    LabelOffset(i64, Label),
 }
 
 impl PartialOrd for Token {
@@ -302,10 +312,13 @@ impl Display for Token {
             Self::F32(v) => write!(f, "${}", v),
             Self::F64(v) => write!(f, "${}", v),
             Self::Addr(v) => write!(f, "[{}]", v),
-            Self::Offset(off, reg) => write!(f, "[{}+{}]", *off, reg),
+            Self::RegOffset(off, reg) => write!(f, "[{}+{}]", *off, reg),
             Self::Register(reg) => write!(f, "{}", reg),
             Self::Label(lab) => write!(f, "%{}", lab.name),
             Self::Data(dat) => write!(f, "@{}", dat.label.name),
+            Self::LabelOffset(off, lab) => {
+                write!(f, "({}+%{})", *off, lab.name)
+            }
         }
     }
 }
@@ -520,7 +533,8 @@ impl Token {
             Self::Addr(_) => 8,
             Self::Data(_) => 8,
             Self::Register(_) => 8,
-            Self::Offset(_, _) => 8,
+            Self::RegOffset(_, _) => 8,
+            Self::LabelOffset(_, _) => 8,
             Self::Unknown => 0,
         }
     }
@@ -538,7 +552,8 @@ impl Token {
             Self::Addr(adr) => 1 + adr.mc_size_in_bytes(),
             Self::Data(_) => 8 + 1,
             Self::Register(_) => 1,
-            Self::Offset(_, _) => 1 + 8 + 1,
+            Self::RegOffset(_, _) => 1 + 8 + 1,
+            Self::LabelOffset(_, _) => 8 + 1,
             Self::Unknown => 0,
         }
     }
@@ -850,7 +865,9 @@ impl Instr {
     pub fn signature(&self) -> InstrSig {
         let arg0 = if let Some(arg0) = &self.arg0 {
             match arg0 {
-                Token::Addr(_) | Token::Label(_) | Token::Data(_) => InstrSig::Adr,
+                Token::Addr(_) | Token::Label(_) | Token::Data(_) | Token::LabelOffset(_, _) => {
+                    InstrSig::Adr
+                }
                 _ => InstrSig::Val,
             }
         } else {
@@ -858,7 +875,9 @@ impl Instr {
         };
         let arg1 = if let Some(arg1) = &self.arg1 {
             match arg1 {
-                Token::Addr(_) | Token::Label(_) | Token::Data(_) => InstrSig::Adr,
+                Token::Addr(_) | Token::Label(_) | Token::Data(_) | Token::LabelOffset(_, _) => {
+                    InstrSig::Adr
+                }
                 _ => InstrSig::Val,
             }
         } else {

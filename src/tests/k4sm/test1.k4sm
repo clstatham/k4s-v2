@@ -1,14 +1,30 @@
 !ent 0x1000
-!include "src/tests/c/test1.k4sm"
 !include "src/tests/k4sm/inctest1.k4sm"
-jmp i64 %start
+!include "src/tests/rust/target/compiler_builtins.k4sm"
+!include "src/tests/rust/target/core.k4sm"
+!include "src/tests/rust/target/rusttest.k4sm"
+jmp i64 %_start
 
 @hello align1 "Hi Guys!"
 
-%start
+
+%llvm.assume
+    ret
+
+%printi_
+    printi i64 rg
+    ret
+
+%printc_
+    printc i8 rg
+    ret
+
+%hlt
+    hlt
+    und
+
+%_start
     ; computes the sum of 42 and 69
-    mov i32 rg $42
-    mov i32 rh $69
-    call i64 %sum
+    call i64 %kernel_main
     printi i32 ra
     hlt

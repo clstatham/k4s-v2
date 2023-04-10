@@ -95,7 +95,7 @@ pub struct Regs {
 }
 
 impl Regs {
-    pub fn get(&self, reg: Register, size: InstrSize) -> Option<Token> {
+    pub fn get(&self, reg: Register, size: InstrSize) -> Token {
         match reg {
             Register::Rz => Token::from_integer_size(0u8, size),
             Register::Ra => Token::from_integer_size(self.ra, size),
@@ -114,7 +114,7 @@ impl Regs {
             Register::Sp => Token::from_integer_size(self.sp, size),
             Register::Pc => Token::from_integer_size(self.pc, size),
             Register::Fl => Token::from_integer_size(self.fl.bits(), size),
-        }
+        }.unwrap_or_else(|| panic!("Error interpreting {} as {}", reg, size))
     }
 
     pub fn set(&mut self, reg: Register, val: Token) {
@@ -261,11 +261,17 @@ impl MachineContext {
             eprintln!();
             eprintln!("{}", self.regs);
             if let Some(tok) = &instr.arg0 {
-                let tok_eval = self.eval_token(tok.to_owned(), instr.size)?;
+                let tok_eval = self
+                    .eval_token(tok.to_owned(), InstrSize::I64)?
+                    .as_integer::<u64>()
+                    .unwrap();
                 eprintln!("arg0 = {:?} ({:x?})", tok, tok_eval);
             }
             if let Some(tok) = &instr.arg1 {
-                let tok_eval = self.eval_token(tok.to_owned(), instr.size)?;
+                let tok_eval = self
+                    .eval_token(tok.to_owned(), InstrSize::I64)?
+                    .as_integer::<u64>()
+                    .unwrap();
                 eprintln!("arg1 = {:?} ({:x?})", tok, tok_eval);
             }
             eprintln!(
@@ -312,12 +318,11 @@ impl MachineContext {
     }
 
     fn offset_to_addr(&self, token: Token) -> Token {
-        if let Token::Offset(offset, reg) = token {
+        if let Token::RegOffset(offset, reg) = token {
             Token::Addr(Box::new(Token::I64(
                 (self
                     .regs
                     .get(reg, InstrSize::I64)
-                    .unwrap()
                     .as_integer::<u64>()
                     .unwrap() as i64
                     + offset) as u64,
@@ -329,8 +334,7 @@ impl MachineContext {
 
     fn register_to_value(&self, token: Token, size: InstrSize) -> Token {
         if let Token::Register(reg) = token {
-            let res = self.regs.get(reg, size);
-            res.unwrap()
+            self.regs.get(reg, size)
         } else {
             token
         }
@@ -345,8 +349,7 @@ impl MachineContext {
                 Ok(self.ram.peek(
                     target_size,
                     self.regs
-                        .get(reg, target_size)
-                        .unwrap()
+                        .get(reg, InstrSize::I64)
                         .as_integer()
                         .unwrap(),
                 ))
@@ -422,11 +425,12 @@ impl MachineContext {
         instr: &Instr,
         f: impl FnOnce(&Token) -> Result<Token>,
     ) -> Result<()> {
+        
         match instr.signature() {
             InstrSig::AdrAdr | InstrSig::AdrVal | InstrSig::Adr => match lvalue {
                 Token::Addr(ref addr) => {
                     let addr = match *addr.to_owned() {
-                        Token::Register(reg) => self.regs.get(reg, InstrSize::I64).unwrap().as_integer().unwrap(),
+                        Token::Register(reg) => self.regs.get(reg, InstrSize::I64).as_integer().unwrap(),
                         _ => addr.as_integer().unwrap(),
                     };
                     let a = self.ram.peek(instr.size, addr);
@@ -442,12 +446,21 @@ impl MachineContext {
             },
             InstrSig::ValVal | InstrSig::ValAdr | InstrSig::Val => match lvalue {
                 Token::Register(reg) => {
-                    let a = self.regs.get(reg, instr.size).unwrap();
-                    let a = f(&a)?;
-                    self.regs.set(reg, a);
-                    Ok(())
+                    if instr.opcode == Opcode::Mov {
+                        // mov is special, since we don't actually do anything with whatever's currently in the register
+                        // let a = self.regs.get(reg, instr.size).unwrap_or_else(|| panic!("Error evaluating register {reg} as {}", instr.size));
+                        let a = f(&Token::Unknown)?;
+                        self.regs.set(reg, a);
+                        Ok(())
+                    } else {
+                        let a = self.regs.get(reg, instr.size);
+                        let a = f(&a)?;
+                        self.regs.set(reg, a);
+                        Ok(())
+                    }
+                    
                 }
-                Token::Offset(..) => {
+                Token::RegOffset(..) => {
                     let addr = self.offset_to_addr(lvalue);
                     let addr = self.addr_to_value(addr)?.as_integer().unwrap();
                     // let value = self.addr_to_value(addr, instr.size).unwrap().as_integer().unwrap();
