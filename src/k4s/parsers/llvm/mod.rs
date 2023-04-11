@@ -2,13 +2,12 @@ use std::rc::Rc;
 
 use llvm_ir::{
     types::{NamedStructDef, Typed, Types},
-    Constant, ConstantRef, FPPredicate, Instruction, IntPredicate, Name, Operand, Type, TypeRef,
+    ConstantRef, FPPredicate, Instruction, IntPredicate, Name, Operand, Type, TypeRef,
 };
 
 use crate::k4s::{
-    contexts::llvm::{FunctionContext, LlvmContext},
-    parsers::llvm::consteval::NameExt,
-    Instr, InstrSize, Label, Linkage, Opcode, Register, Token,
+    contexts::llvm::FunctionContext, parsers::llvm::consteval::NameExt, Instr, InstrSize, Label,
+    Linkage, Opcode, Register, Token,
 };
 
 use self::consteval::TypeExt;

@@ -12,7 +12,7 @@ impl Ssa {
     pub fn parse_const(con: &ConstantRef, name: Name, types: &Types) -> Self {
         let ty = con.get_type(types);
         match con.as_ref() {
-            Constant::Int { bits, value } => Self::new(
+            Constant::Int { value, .. } => Self::new(
                 name,
                 ty.to_owned(),
                 Token::from_integer_size(*value, ty.instr_size(types)).unwrap(),

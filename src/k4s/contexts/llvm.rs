@@ -5,10 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
-use llvm_ir::{
-    types::{Typed, Types},
-    Constant, ConstantRef, Module, Name, Terminator, Type, TypeRef,
-};
+use llvm_ir::{types::Types, Constant, ConstantRef, Module, Name, Terminator, TypeRef};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
@@ -161,8 +158,7 @@ impl LlvmContext {
                 last_block: None,
             };
             let func_name: Name = func.name.to_owned().into();
-            eprintln!();
-            eprintln!("Entering function {}", func_name);
+            log::debug!("Entering function {}", func_name);
             self.functions.insert(func_name.to_owned(), ctx);
             let ctx = self
                 .functions
@@ -266,11 +262,11 @@ impl LlvmContext {
 
             for bb in func.basic_blocks.iter() {
                 let mut exprs = Vec::new();
-                eprintln!("--> Entering basic block {}.", bb.name);
+                log::trace!("--> Entering basic block {}.", bb.name);
                 let bb_name: Name =
                     format!("{}_{}", func_name.strip_prefix(), bb.name.strip_prefix()).into();
                 for instr in bb.instrs.iter() {
-                    eprintln!("-->     {}", instr);
+                    log::trace!("-->     {}", instr);
                     exprs.push(Expr::builder().push_comment(&format!("{}", instr)).build());
                     exprs.push(Expr::parse(instr, ctx, &types));
                 }
@@ -286,7 +282,7 @@ impl LlvmContext {
                         .build(),
                 );
 
-                eprintln!("-->     {}", bb.term);
+                log::trace!("-->     {}", bb.term);
                 exprs.push(
                     Expr::builder()
                         .push_comment(&format!("{}", bb.term))

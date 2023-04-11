@@ -205,6 +205,8 @@ pub struct MachineContext {
     pub ram: Box<[u8]>,
     pub regs: Regs,
     pub debug_symbols: FxHashMap<u64, String>,
+    pub instr_history: Vec<String>,
+    pub stack_frame: Vec<(u64, u64)>,
 }
 
 impl MachineContext {
@@ -244,6 +246,8 @@ impl MachineContext {
             ram,
             regs,
             debug_symbols,
+            instr_history: Vec::new(),
+            stack_frame: Vec::new(),
         })
     }
 
@@ -255,31 +259,38 @@ impl MachineContext {
                 "Error parsing instruction\nFirst 16 bytes:\n{:?}",
                 &chunk[..16]
             ))?;
-        #[cfg(debug_assertions)]
-        {
-            // dbg!(&instr);
-            eprintln!();
-            eprintln!("{}", self.regs);
-            if let Some(tok) = &instr.arg0 {
-                let tok_eval = self
-                    .eval_token(tok.to_owned(), InstrSize::I64)?
-                    .as_integer::<u64>()
-                    .unwrap();
-                eprintln!("arg0 = {:?} ({:x?})", tok, tok_eval);
-            }
-            if let Some(tok) = &instr.arg1 {
-                let tok_eval = self
-                    .eval_token(tok.to_owned(), InstrSize::I64)?
-                    .as_integer::<u64>()
-                    .unwrap();
-                eprintln!("arg1 = {:?} ({:x?})", tok, tok_eval);
-            }
-            eprintln!(
-                "{:016x} --> {}",
-                self.regs.pc,
-                &instr.display_with_symbols(&self.debug_symbols)
-            );
+        
+        // dbg!(&instr);
+        log::debug!("\n{}", self.regs);
+        if let Some(tok) = &instr.arg0 {
+            let tok_eval = self
+                .eval_token(tok.to_owned(), InstrSize::I64)?
+                .as_integer::<u64>()
+                .unwrap();
+            log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
         }
+        if let Some(tok) = &instr.arg1 {
+            let tok_eval = self
+                .eval_token(tok.to_owned(), InstrSize::I64)?
+                .as_integer::<u64>()
+                .unwrap();
+            log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
+        }
+        log::debug!(
+            "{:016x} --> {}",
+            self.regs.pc,
+            &instr.display_with_symbols(&self.debug_symbols)
+        );
+        self.instr_history.push(format!("{:010x} ==> {}", self.regs.pc, instr.display_with_symbols(&self.debug_symbols)));
+        self.stack_frame = {
+            let bp = self.regs.bp - self.regs.bp % 8;
+            let sp = self.regs.sp - self.regs.sp % 8;
+            let mut out = Vec::new();
+            for adr in (sp..=bp).rev().step_by(8) {
+                out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).as_integer().unwrap()));
+            }
+            out
+        };
 
         if instr.opcode == Opcode::Hlt {
             return Ok(MachineState::Halt);
@@ -549,10 +560,11 @@ impl MachineContext {
                 );
             }
             Opcode::Printc => {
+                let chr = self.read0(arg0?, instr)?;
+                let chr = chr.as_integer::<u8>().ok_or(Error::msg(format!("Error converting to u8: {:?}", chr)))?;
                 print!(
                     "{}",
-                    std::str::from_utf8(&[self.read0(arg0?, instr)?.as_integer::<u8>().unwrap()])
-                        .unwrap()
+                    std::str::from_utf8(&[chr]).map_err(|_| Error::msg(format!("Error converting to utf-8: {:2x}", chr)))?
                 );
             }
             Opcode::Call => {

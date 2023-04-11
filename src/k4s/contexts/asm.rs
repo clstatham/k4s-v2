@@ -6,7 +6,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
     parsers::{
-        asm::{data, header, lab_offset, lab_offset_const, label, literal, opcode, size, token},
+        asm::{data, header, lab_offset_const, label, literal, opcode, size, token},
         machine::tags,
     },
     Data, Instr, InstrSize, Label, Linkage, Primitive, Token,
@@ -221,7 +221,7 @@ impl AssemblyContext {
                     return Err(Error::msg(format!("Invalid data on line {line_no}")));
                 }
             } else if !junk.is_empty() && !junk.trim().starts_with(';') {
-                eprintln!("Warning: Ignoring junk after line {line_no}: {junk}");
+                log::warn!("Ignoring junk after line {line_no}: {junk}");
             }
             if let ParsedLine::Header(ref header) = parsed_line {
                 if !in_header {
@@ -247,7 +247,6 @@ impl AssemblyContext {
                             .contains(&path.to_owned())
                         {
                             self.included_modules.insert(path.to_owned());
-                            // eprintln!("Warning, ignoring doubly-included path {path}");
                         }
                     }
                 }
@@ -367,7 +366,6 @@ impl AssemblyContext {
                                     &((*link_location as i64 + off) as u64).to_bytes(),
                                 );
                         }
-                        // self.unlinked_offset_refs.remove(&(off, lab.to_owned()));
                     } else if check_link {
                         return Err(Error::msg(format!(
                             "Undefined reference to label {}",
@@ -459,7 +457,7 @@ impl AssemblyContext {
         {
             for (lab, refs) in self.unlinked_refs.iter() {
                 if !refs.is_empty() {
-                    eprintln!(
+                    log::error!(
                         "Undefined reference to label {} after stage 2 of linking",
                         lab.name
                     );

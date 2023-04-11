@@ -1,14 +1,12 @@
 use std::{
     fs::File,
     io::{Read, Write},
-    process::Command,
 };
 
 use anyhow::Result;
 
 use crate::k4s::contexts::{asm::AssemblyContext, llvm::LlvmContext, machine::MachineContext};
 
-// #[test]
 pub fn test_assemble() -> Result<()> {
     let mut asm = String::new();
     let mut file = File::open("src/tests/k4sm/test1.k4sm")?;
@@ -25,7 +23,7 @@ pub fn test_assemble() -> Result<()> {
     Ok(())
 }
 
-// #[test]
+#[doc(hidden)]
 pub fn test_run() -> Result<()> {
     let mut program = vec![];
     let mut file = File::open("target/test1.k4s")?;
@@ -41,7 +39,7 @@ pub fn test_llvm() -> Result<()> {
     for path in paths {
         let path = path?;
         let mut ctx = LlvmContext::load(path.clone());
-        println!("Lowering {}.", path.as_path().to_string_lossy());
+        log::info!("Lowering {}.", path.as_path().to_string_lossy());
         let asm = ctx.lower()?;
         // println!("{}", asm);
         let new_path = path.file_name().unwrap().to_string_lossy();
