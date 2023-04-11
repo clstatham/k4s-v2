@@ -8,33 +8,40 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug executable 'k4s-v2'",
+            "env": {
+                "LLVM_SYS_130_PREFIX": "/usr"
+            },
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=k4s-v2",
+                    "--bin=k4s",
                     "--package=k4s-v2"
                 ],
                 "filter": {
-                    "name": "k4s-v2",
+                    "name": "k4s",
                     "kind": "bin"
                 }
             },
-            "args": [],
             "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
             "name": "Debug unit tests in executable 'k4s-v2'",
+            "env": {
+                "LLVM_SYS_130_PREFIX": "/usr"
+            },
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=k4s-v2",
-                    "--package=k4s-v2"
+                    "--bin=k4s",
+                    "--package=k4s-v2",
+                    "--",
+                    "--nocapture"
                 ],
                 "filter": {
-                    "name": "k4s-v2",
+                    "name": "k4s",
                     "kind": "bin"
                 }
             },

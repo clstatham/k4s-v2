@@ -55,6 +55,7 @@ dependencies = [
  "bitflags",
  "glob",
  "llvm-ir",
+ "llvm-sys",
  "nom",
  "rustc-demangle",
  "rustc-hash",

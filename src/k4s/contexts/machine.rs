@@ -448,7 +448,7 @@ impl MachineContext {
                 Token::Register(reg) => {
                     if instr.opcode == Opcode::Mov {
                         // mov is special, since we don't actually do anything with whatever's currently in the register
-                        // let a = self.regs.get(reg, instr.size).unwrap_or_else(|| panic!("Error evaluating register {reg} as {}", instr.size));
+                        // (and we could be putting a different InstrSize in there)
                         let a = f(&Token::Unknown)?;
                         self.regs.set(reg, a);
                         Ok(())

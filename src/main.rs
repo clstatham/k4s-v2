@@ -8,6 +8,7 @@ pub mod tests;
 fn main() -> Result<()> {
     match args().last().unwrap().as_str() {
         "run" => tests::test_run()?,
+        "build" => tests::test_assemble()?,
         "llvm" => tests::test_llvm()?,
         _ => {}
     };

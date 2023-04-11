@@ -1,15 +1,40 @@
 !ent 0x1000
-!include "src/tests/k4sm/inctest1.k4sm"
-!include "src/tests/rust/target/compiler_builtins.k4sm"
-!include "src/tests/rust/target/core.k4sm"
-!include "src/tests/rust/target/rusttest.k4sm"
 jmp i64 %_start
 
-@hello align1 "Hi Guys!"
+%_start
+    call i64 %kernel_main
+    printi i32 ra
+    hlt
+
+%llvm.memcpy.p0i8.p0i8.i64
+    push i64 bp
+    mov i64 rb rg ; dest
+    mov i64 rd rh ; src
+    ; ri = len
+    mov i64 rc rz
+%llvm.memcpy.p0i8.p0i8.i64_loop
+    cmp i64 rc ri
+    jeq i64 %llvm.memcpy.p0i8.p0i8.i64_end
+    mov i8 [rb] [rd]
+    add i64 rc $1
+    add i64 rb $1
+    add i64 rd $1
+    jmp i64 %llvm.memcpy.p0i8.p0i8.i64_loop
+%llvm.memcpy.p0i8.p0i8.i64_end
+    pop i64 bp
+    ret
 
 
 %llvm.assume
+    cmp i8 rg rz
+    jne i64 %llvm.assume.passed
+    und
+%llvm.assume.passed
     ret
+
+%llvm.lifetime.start.p0i8
+    ret
+
 
 %printi_
     printi i64 rg
@@ -23,8 +48,3 @@ jmp i64 %_start
     hlt
     und
 
-%_start
-    ; computes the sum of 42 and 69
-    call i64 %kernel_main
-    printi i32 ra
-    hlt

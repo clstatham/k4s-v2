@@ -80,9 +80,16 @@ impl Ssa {
         }
     }
 
-    pub fn get_offset(&self) -> Option<(i64, Register)> {
+    pub fn get_reg_offset(&self) -> Option<(i64, Register)> {
         if let Token::RegOffset(off, reg) = self.inner.storage {
             Some((off, reg))
+        } else {
+            None
+        }
+    }
+    pub fn get_label_offset(&self) -> Option<(i64, Label)> {
+        if let Token::LabelOffset(off, ref lab) = self.inner.storage {
+            Some((off, lab.to_owned()))
         } else {
             None
         }
@@ -201,7 +208,7 @@ impl Expr {
                     .get_type(types),
                     types,
                 );
-                let (off, reg) = actual.get_offset().unwrap();
+                let (off, reg) = actual.get_reg_offset().unwrap();
                 let off = Token::I64(-off as u64);
                 let reg = Token::Register(reg);
                 let expr = Expr::builder()
@@ -785,7 +792,7 @@ impl Expr {
 
                 let tmp = ctx.any_register().unwrap();
                 let mut expr = Expr::new();
-                let (off, reg) = dest.get_offset().unwrap();
+                let (off, reg) = dest.get_reg_offset().unwrap();
                 expr.push_instr(Instr::new(
                     Opcode::Mov,
                     InstrSize::I64,
@@ -855,7 +862,7 @@ impl Expr {
                 let dest = ctx.get_or_push(&instr.dest, &current_ty.get_type(types), types);
                 let mut expr = Expr::new();
                 let tmp = ctx.any_register().unwrap();
-                let (off, reg) = agg.get_offset().unwrap();
+                let (off, reg) = agg.get_reg_offset().unwrap();
                 expr.push_instr(Instr::new(
                     Opcode::Mov,
                     InstrSize::I64,
@@ -1033,14 +1040,50 @@ impl Expr {
         let mut expr = Expr::new();
 
         let tmp_dest = ctx.any_register().unwrap();
-        expr.push_instr(Instr::new(
-            Opcode::Mov,
-            InstrSize::I64,
-            Some(Token::Register(tmp_dest)),
-            Some(addr.storage().to_owned()),
-        ));
 
+        if let Some((off, reg)) = addr.get_reg_offset() {
+            expr.push_instr(Instr::new(
+                Opcode::Mov,
+                InstrSize::I64,
+                Some(Token::Register(tmp_dest)),
+                Some(Token::Register(reg)),
+            ));
+            expr.push_instr(Instr::new(
+                Opcode::Sub,
+                InstrSize::I64,
+                Some(Token::Register(tmp_dest)),
+                Some(Token::I64(-off as u64)),
+            ));
+        } else if let Some((off, lab)) = addr.get_label_offset() {
+            expr.push_instr(Instr::new(
+                Opcode::Mov,
+                InstrSize::I64,
+                Some(Token::Register(tmp_dest)),
+                Some(Token::Label(lab)),
+            ));
+            expr.push_instr(Instr::new(
+                Opcode::Add,
+                InstrSize::I64,
+                Some(Token::Register(tmp_dest)),
+                Some(Token::I64(off as u64)),
+            ));
+        } else if let Token::Label(lab) = addr.storage() {
+            expr.push_instr(Instr::new(
+                Opcode::Mov,
+                InstrSize::I64,
+                Some(Token::Register(tmp_dest)),
+                Some(Token::Label(lab.to_owned())),
+            ));
+        } else {
+            unreachable!("Addr of GEP must be a pointer: {:?}", addr.storage())
+        }
+
+        // let mut current_type = Type::PointerType {
+        //     pointee_type: addr.ty(),
+        //     addr_space: 0,
+        // };
         let mut current_type = addr.ty().as_ref().to_owned();
+
         for idx in indices.iter() {
             if let Type::NamedStructType { ref name } = current_type.clone() {
                 let struc = types.named_struct_def(name).unwrap();
