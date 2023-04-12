@@ -1,5 +1,4 @@
 use std::{
-    env::args,
     fs::File,
     io::{Read, Write},
     path::PathBuf,
@@ -28,11 +27,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Run {
-        #[arg(short, long)]
         binary: PathBuf,
     },
     Debug {
-        #[arg(short, long)]
         binary: PathBuf,
     },
     Build {
@@ -51,24 +48,18 @@ fn run(bin_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-// #[test]
 fn build_llvm(mut src_path: PathBuf) -> Result<Option<PathBuf>> {
-    // let paths = glob::glob("src/tests/rust/target/k4s-unknown-none/release/deps/*.bc")?;
     if let Some(ext) = src_path.extension() {
         if &ext.to_string_lossy() == "bc" {
             let mut ctx = LlvmContext::load(src_path.clone());
             log::info!(
                 "Lowering {} to k4sm assembly.",
-                src_path.as_path().to_string_lossy()
+                src_path.file_name().unwrap().to_string_lossy()
             );
             let asm = ctx.lower()?;
-            // println!("{}", asm);
-            // let new_path = src_path.file_name().unwrap().to_string_lossy();
             src_path.set_extension("k4sm");
-            {
-                let mut file = File::create(src_path.to_owned())?;
-                file.write_all(asm.as_bytes())?;
-            }
+            let mut file = File::create(src_path.clone())?;
+            file.write_all(asm.as_bytes())?;
             Ok(Some(src_path))
         } else {
             Ok(None)
@@ -80,7 +71,6 @@ fn build_llvm(mut src_path: PathBuf) -> Result<Option<PathBuf>> {
 
 fn build_asm(paths: Vec<PathBuf>, mut out_path: PathBuf) -> Result<()> {
     let mut asm = String::new();
-    // let paths = glob::glob("src/tests/rust/target/*.k4sm")?;
     for path in paths {
         let mut file = File::open(path)?;
         file.read_to_string(&mut asm)?;
