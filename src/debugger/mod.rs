@@ -9,19 +9,20 @@ use anyhow::Result;
 use crate::k4s::contexts::machine::{MachineContext, MachineState};
 
 slint::slint! {
-    import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+    import { Button, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
     import "./src/debugger/assets/BigBlue_Terminal_437TT_Nerd_Font.ttf";
 
     export component Debugger inherits Window {
         default-font-family: "BigBlue_Terminal_437TT Nerd Font";
-        width: 1000px;
-        height: 600px;
+        width: 1600px;
+        height: 900px;
         background: black;
         title: "K4S Debugger";
         in property <string> registers_text: "";
         in property <string> program_text: "";
         in property <string> error_text: "";
         in property <string> stack_text: "";
+        in property <string> output_text: "";
         pure callback cont_program();
         pure callback step_program();
         VerticalBox {
@@ -45,27 +46,28 @@ slint::slint! {
             }
             Text {
                 text: registers_text;
-                color: green;
+                color: white;
             }
-            HorizontalLayout {
+            HorizontalBox {
                 HorizontalBox {
                     alignment: start;
-                    Text {
+                    width: parent.width - 280px;
+                    TextEdit {
                         text: program_text;
-                        color: white;
-                        vertical-alignment: top;
+                        read-only: true;
                         horizontal-alignment: left;
                         height: 400px;
+                        width: 100%;
                     }
                 }
                 HorizontalBox {
                     alignment: end;
-                    Text {
+                    TextEdit {
                         text: stack_text;
-                        color: yellow;
-                        vertical-alignment: top;
+                        read-only: true;
                         horizontal-alignment: right;
                         height: 400px;
+                        width: 260px;
                     }
                 }
 
@@ -73,6 +75,10 @@ slint::slint! {
             Text {
                 text: error_text;
                 color: red;
+            }
+            Text {
+                text: output_text;
+                color: white;
             }
         }
     }
@@ -106,14 +112,8 @@ pub fn debugger_main() -> Result<()> {
             }
             Ok(MachineState::ContDontUpdatePc | MachineState::Continue) => {
                 dbgr.set_registers_text(format!("{}", emu.regs).into());
-                let scroll_len = emu.instr_history.len().min(30);
-                let scroll_begin = emu.instr_history.len() - scroll_len;
-                dbgr.set_program_text(
-                    emu.instr_history[scroll_begin..scroll_begin + scroll_len]
-                        .join("\n")
-                        .into(),
-                );
-                let stack_text = {
+                dbgr.set_program_text(emu.instr_history.join("\n").into());
+                let mut stack_text = {
                     emu.stack_frame
                         .iter()
                         .copied()
@@ -121,7 +121,9 @@ pub fn debugger_main() -> Result<()> {
                         .collect::<Vec<String>>()
                         .join("\n")
                 };
+                stack_text.push('\n');
                 dbgr.set_stack_text(stack_text.into());
+                dbgr.set_output_text(emu.output_history.clone().into());
             }
             Ok(MachineState::Halt) => {}
         }
@@ -130,36 +132,30 @@ pub fn debugger_main() -> Result<()> {
     dbgr.on_cont_program(move || {
         let emu_handle = emu_handle_on_cont_program.upgrade().unwrap();
         let mut emu = emu_handle.lock().unwrap();
-
+        let dbgr = dbgr_handle_on_cont_program.unwrap();
         loop {
-            let dbgr = dbgr_handle_on_cont_program.unwrap();
             match emu.step() {
                 Err(e) => {
                     dbgr.set_error_text(format!("{}", e).into());
                     break;
                 }
-                Ok(MachineState::ContDontUpdatePc | MachineState::Continue) => {
-                    dbgr.set_registers_text(format!("{}", emu.regs).into());
-                    let scroll_len = emu.instr_history.len().min(30);
-                    let scroll_begin = emu.instr_history.len() - scroll_len;
-                    dbgr.set_program_text(
-                        emu.instr_history[scroll_begin..scroll_begin + scroll_len]
-                            .join("\n")
-                            .into(),
-                    );
-                    let stack_text = {
-                        emu.stack_frame
-                            .iter()
-                            .copied()
-                            .map(|(adr, val)| format!("bp - {:>5}: {:016x}", adr, val))
-                            .collect::<Vec<String>>()
-                            .join("\n")
-                    };
-                    dbgr.set_stack_text(stack_text.into());
-                }
+                Ok(MachineState::ContDontUpdatePc | MachineState::Continue) => {}
                 Ok(MachineState::Halt) => break,
             }
         }
+        dbgr.set_registers_text(format!("{}", emu.regs).into());
+        dbgr.set_program_text(emu.instr_history.join("\n").into());
+        let mut stack_text = {
+            emu.stack_frame
+                .iter()
+                .copied()
+                .map(|(adr, val)| format!("bp - {:>5}: {:016x}", adr, val))
+                .collect::<Vec<String>>()
+                .join("\n")
+        };
+        stack_text.push('\n');
+        dbgr.set_stack_text(stack_text.into());
+        dbgr.set_output_text(emu.output_history.clone().into());
     });
 
     dbgr.run()?;

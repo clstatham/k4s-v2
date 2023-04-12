@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Display};
+use std::{cmp::Ordering, fmt::{Write, Display}};
 
 use anyhow::{Context, Error, Result};
 use rustc_hash::FxHashMap;
@@ -206,6 +206,7 @@ pub struct MachineContext {
     pub regs: Regs,
     pub debug_symbols: FxHashMap<u64, String>,
     pub instr_history: Vec<String>,
+    pub output_history: String,
     pub stack_frame: Vec<(u64, u64)>,
 }
 
@@ -248,6 +249,7 @@ impl MachineContext {
             debug_symbols,
             instr_history: Vec::new(),
             stack_frame: Vec::new(),
+            output_history: String::new(),
         })
     }
 
@@ -261,42 +263,13 @@ impl MachineContext {
             ))?;
         
         // dbg!(&instr);
-        log::debug!("\n{}", self.regs);
-        if let Some(tok) = &instr.arg0 {
-            let tok_eval = self
-                .eval_token(tok.to_owned(), InstrSize::I64)?
-                .as_integer::<u64>()
-                .unwrap();
-            log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
-        }
-        if let Some(tok) = &instr.arg1 {
-            let tok_eval = self
-                .eval_token(tok.to_owned(), InstrSize::I64)?
-                .as_integer::<u64>()
-                .unwrap();
-            log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
-        }
-        log::debug!(
-            "{:016x} --> {}",
-            self.regs.pc,
-            &instr.display_with_symbols(&self.debug_symbols)
-        );
-        self.instr_history.push(format!("{:010x} ==> {}", self.regs.pc, instr.display_with_symbols(&self.debug_symbols)));
-        self.stack_frame = {
-            let bp = self.regs.bp - self.regs.bp % 8;
-            let sp = self.regs.sp - self.regs.sp % 8;
-            let mut out = Vec::new();
-            for adr in (sp..=bp).rev().step_by(8) {
-                out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).as_integer().unwrap()));
-            }
-            out
-        };
+        
 
         if instr.opcode == Opcode::Hlt {
             return Ok(MachineState::Halt);
         }
 
-        match self.emulate_instr(&instr)? {
+        let res = match self.emulate_instr(&instr)? {
             MachineState::Continue => {
                 self.regs.pc += instr.mc_size_in_bytes() as u64;
                 Ok(MachineState::Continue)
@@ -306,6 +279,43 @@ impl MachineContext {
                 Ok(MachineState::Continue)
             }
             MachineState::Halt => Ok(MachineState::Halt),
+        };
+        match res {
+            Ok(MachineState::Halt) => Ok(MachineState::Halt),
+            Ok(_) => {
+                log::debug!("\n{}", self.regs);
+                if let Some(tok) = &instr.arg0 {
+                    let tok_eval = self
+                        .eval_token(tok.to_owned(), InstrSize::I64)?
+                        .as_integer::<u64>()
+                        .unwrap();
+                    log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
+                }
+                if let Some(tok) = &instr.arg1 {
+                    let tok_eval = self
+                        .eval_token(tok.to_owned(), InstrSize::I64)?
+                        .as_integer::<u64>()
+                        .unwrap();
+                    log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
+                }
+                log::debug!(
+                    "{:016x} --> {}",
+                    self.regs.pc,
+                    &instr.display_with_symbols(&self.debug_symbols)
+                );
+                self.instr_history.push(format!("{:010x} ==> {}", self.regs.pc, instr.display_with_symbols(&self.debug_symbols)));
+                self.stack_frame = {
+                    let bp = self.regs.bp - self.regs.bp % 8;
+                    let sp = self.regs.sp - self.regs.sp % 8;
+                    let mut out = Vec::new();
+                    for adr in (sp..=bp).rev().step_by(8) {
+                        out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).as_integer().unwrap()));
+                    }
+                    out
+                };
+                Ok(MachineState::Continue)
+            }
+            Err(e) => Err(e)
         }
     }
 
@@ -554,10 +564,16 @@ impl MachineContext {
                 self.assign_lvalue_with(arg0?, instr, |arg0| arg0.smod(&arg1?))?;
             }
             Opcode::Printi => {
+                let val = self.read0(arg0?, instr)?;
                 println!(
                     "{}",
-                    self.read0(arg0?, instr)?.as_integer::<u128>().unwrap()
+                    val.as_integer::<u128>().unwrap()
                 );
+                writeln!(
+                    &mut self.output_history,
+                    "{}",
+                    val.as_integer::<u128>().unwrap()
+                )?;
             }
             Opcode::Printc => {
                 let chr = self.read0(arg0?, instr)?;
@@ -566,6 +582,11 @@ impl MachineContext {
                     "{}",
                     std::str::from_utf8(&[chr]).map_err(|_| Error::msg(format!("Error converting to utf-8: {:2x}", chr)))?
                 );
+                write!(
+                    &mut self.output_history,
+                    "{}",
+                    std::str::from_utf8(&[chr]).map_err(|_| Error::msg(format!("Error converting to utf-8: {:2x}", chr)))?
+                )?;
             }
             Opcode::Call => {
                 self.push(Token::I64(self.regs.pc + instr.mc_size_in_bytes() as u64));
