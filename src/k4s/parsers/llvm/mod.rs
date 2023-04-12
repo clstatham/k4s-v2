@@ -194,6 +194,21 @@ impl Expr {
                 expr
             }};
         }
+        macro_rules! cast_instr {
+            ($instr:ident) => {{
+                let ptr = Ssa::parse_operand(&$instr.operand, ctx, types);
+                let dest = ctx.get_or_push(&$instr.dest, &$instr.to_type, types);
+                let expr = Expr::builder()
+                    .push_instr(Instr::new(
+                        Opcode::Mov,
+                        dest.instr_size(types),
+                        Some(dest.storage().to_owned()),
+                        Some(ptr.storage().to_owned()),
+                    ))
+                    .build();
+                expr
+            }};
+        }
         match instr {
             Instruction::Alloca(instr) => {
                 let actual_name = ctx.gen_name();
@@ -397,121 +412,31 @@ impl Expr {
                 expr
             }
             Instruction::PtrToInt(instr) => {
-                let ptr = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(ptr.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::IntToPtr(instr) => {
-                let int = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(int.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::ZExt(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(src.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::Trunc(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(src.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::BitCast(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(src.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::SIToFP(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(src.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::FPToSI(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(src.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::UIToFP(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(src.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::FPToUI(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
-                let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
-                let expr = Expr::builder()
-                    .push_instr(Instr::new(
-                        Opcode::Mov,
-                        dest.instr_size(types),
-                        Some(dest.storage().to_owned()),
-                        Some(src.storage().to_owned()),
-                    ))
-                    .build();
-                expr
+                cast_instr!(instr)
             }
             Instruction::SExt(instr) => {
                 let src = Ssa::parse_operand(&instr.operand, ctx, types);
@@ -523,6 +448,7 @@ impl Expr {
                         Some(dest.storage().to_owned()),
                         Some(src.storage().to_owned()),
                     ))
+                    // sext is special, we have our own instruction for it!
                     .push_instr(Instr::new(
                         Opcode::Sext,
                         dest.instr_size(types),

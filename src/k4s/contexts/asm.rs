@@ -353,9 +353,9 @@ impl AssemblyContext {
                         let ref_locs =
                             self.unlinked_offset_refs.get_mut(&(off, lab.to_owned())).unwrap_or_else(|| {
                                 panic!(
-                                    "Label offset ({}+%{}) needed linking, but wasn't in the unlinked refs",
+                                    "Label offset ({}+{}) needed linking, but wasn't in the unlinked refs",
                                     off,
-                                    lab.name
+                                    lab
                                 )
                             });
                         for ref_loc in ref_locs.drain() {
@@ -377,8 +377,8 @@ impl AssemblyContext {
                         if let Some(link_location) = self.linked_refs.get(lab) {
                             let ref_locs = self.unlinked_refs.get_mut(lab).unwrap_or_else(|| {
                                 panic!(
-                                    "Label %{} needed linking, but wasn't in the unlinked refs",
-                                    lab.name
+                                    "Label {} needed linking, but wasn't in the unlinked refs",
+                                    lab
                                 )
                             });
                             lab.linkage = Linkage::Linked(*link_location);
@@ -392,7 +392,7 @@ impl AssemblyContext {
                         } else if check_link {
                             return Err(Error::msg(format!(
                                 "Undefined reference to label {}",
-                                lab.name
+                                lab
                             )));
                         }
                     }
@@ -403,9 +403,9 @@ impl AssemblyContext {
                         let ref_locs =
                             self.unlinked_offset_refs.get_mut(&(off, lab.to_owned())).unwrap_or_else(|| {
                                 panic!(
-                                    "Label offset ({}+%{}) needed linking, but wasn't in the unlinked refs",
+                                    "Label offset ({}+{}) needed linking, but wasn't in the unlinked refs",
                                     off,
-                                    lab.name
+                                    lab
                                 )
                             });
                         for ref_loc in ref_locs.drain() {

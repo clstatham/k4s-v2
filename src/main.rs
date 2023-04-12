@@ -26,12 +26,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Run {
-        binary: PathBuf,
-    },
-    Debug {
-        binary: PathBuf,
-    },
+    /// Run a compiled k4s binary in an emulator
+    Run { binary: PathBuf },
+    /// Debug a compiled k4s binary with an interactive graphical debugger
+    Debug { binary: PathBuf },
+    /// Build *.k4sm assembly and LLVM *.bc bitcode into a compiled k4s binary
     Build {
         sources: Vec<PathBuf>,
         #[arg(short, long)]
@@ -103,7 +102,18 @@ fn main() -> Result<()> {
         Commands::Build { sources, output } => {
             let mut asm_files = vec![];
             for source_path in sources {
-                if let Some(asm_path) = build_llvm(source_path.to_owned())? {
+                if let Ok(paths) = glob::glob(source_path.as_os_str().to_str().ok_or(
+                    anyhow::Error::msg(format!("Invalid source path: {:?}", source_path)),
+                )?) {
+                    for path in paths {
+                        let source_path = path?;
+                        if let Some(asm_path) = build_llvm(source_path.to_owned())? {
+                            asm_files.push(asm_path);
+                        } else {
+                            asm_files.push(source_path);
+                        }
+                    }
+                } else if let Some(asm_path) = build_llvm(source_path.to_owned())? {
                     asm_files.push(asm_path);
                 } else {
                     asm_files.push(source_path);

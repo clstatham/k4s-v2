@@ -442,36 +442,42 @@ impl LlvmContext {
 
         for (_func_name, func) in self.functions.iter() {
             for (block_name, block) in func.prologue.iter() {
-                writeln!(out, "%{}", block_name.strip_prefix())?;
+                writeln!(out, "{}", Label::new_unlinked(block_name.strip_prefix()))?;
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
                             ExprElem::Instr(instr) => writeln!(out, "    {}", instr)?,
-                            ExprElem::Label(label) => writeln!(out, "%{}", label.strip_prefix())?,
+                            ExprElem::Label(label) => {
+                                writeln!(out, "{}", Label::new_unlinked(label.strip_prefix()))?
+                            }
                             ExprElem::Comment(comment) => writeln!(out, ";{}", comment)?,
                         }
                     }
                 }
             }
             for (block_name, block) in func.body.iter() {
-                writeln!(out, "%{}", block_name.strip_prefix())?;
+                writeln!(out, "{}", Label::new_unlinked(block_name.strip_prefix()))?;
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
                             ExprElem::Instr(instr) => writeln!(out, "    {}", instr)?,
-                            ExprElem::Label(label) => writeln!(out, "%{}", label.strip_prefix())?,
+                            ExprElem::Label(label) => {
+                                writeln!(out, "{}", Label::new_unlinked(label.strip_prefix()))?
+                            }
                             ExprElem::Comment(comment) => writeln!(out, ";{}", comment)?,
                         }
                     }
                 }
             }
             for (block_name, block) in func.epilogue.iter() {
-                writeln!(out, "%{}", block_name.strip_prefix())?;
+                writeln!(out, "{}", Label::new_unlinked(block_name.strip_prefix()))?;
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
                             ExprElem::Instr(instr) => writeln!(out, "    {}", instr)?,
-                            ExprElem::Label(label) => writeln!(out, "%{}", label.strip_prefix())?,
+                            ExprElem::Label(label) => {
+                                writeln!(out, "{}", Label::new_unlinked(label.strip_prefix()))?
+                            }
                             ExprElem::Comment(comment) => writeln!(out, ";{}", comment)?,
                         }
                     }
@@ -491,7 +497,7 @@ impl LlvmContext {
         } = agg.as_ref()
         {
             // need to insert each element as a data tag with label pointers to their beginnings
-            writeln!(out, "%{}", agg_name.strip_prefix()).unwrap();
+            writeln!(out, "{}", Label::new_unlinked(agg_name.strip_prefix())).unwrap();
             for (i, elem) in values.iter().enumerate() {
                 let elem_name = format!("{}_elem{}", agg_name.strip_prefix(), i);
                 let elem = Ssa::parse_const(elem, elem_name.to_owned().into(), types);
@@ -517,10 +523,11 @@ impl LlvmContext {
                             writeln!(out, "\"").unwrap();
                         }
                         Token::LabelOffset(off, lab) => {
-                            writeln!(out, "%{} ({}+%{})", elem_name, *off, lab.name).unwrap();
+                            writeln!(out, "{} ({}+{})", Label::new_unlinked(elem_name), *off, lab)
+                                .unwrap();
                         }
                         Token::Label(_lab) => {
-                            writeln!(out, "%{}", elem_name).unwrap();
+                            writeln!(out, "{}", Label::new_unlinked(elem_name)).unwrap();
                         }
                         _ => todo!("{:?}", elem.storage()),
                     }

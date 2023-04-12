@@ -236,6 +236,12 @@ pub struct Label {
     pub linkage: Linkage,
 }
 
+impl Display for Label {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "%{}", self.name.replace(['.', '$'], "_"))
+    }
+}
+
 impl Label {
     pub fn new_unlinked(name: String) -> Self {
         Self {
@@ -314,10 +320,10 @@ impl Display for Token {
             Self::Addr(v) => write!(f, "[{}]", v),
             Self::RegOffset(off, reg) => write!(f, "[{}+{}]", *off, reg),
             Self::Register(reg) => write!(f, "{}", reg),
-            Self::Label(lab) => write!(f, "%{}", lab.name),
+            Self::Label(lab) => write!(f, "{}", lab),
             Self::Data(dat) => write!(f, "@{}", dat.label.name),
             Self::LabelOffset(off, lab) => {
-                write!(f, "({}+%{})", *off, lab.name)
+                write!(f, "({}+{})", *off, lab)
             }
         }
     }
@@ -511,7 +517,7 @@ impl Token {
             Self::Addr(v) => format!("[{}]", v.display_with_symbols(symbols)),
             Self::I64(v) => {
                 if let Some(lab) = symbols.get(v) {
-                    format!("%{}", lab)
+                    lab.to_string()
                 } else {
                     format!("${}", v)
                 }

@@ -7,21 +7,58 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'k4s-v2'",
+            "name": "Debug `k4s build`",
             "env": {
-                "LLVM_SYS_130_PREFIX": "/usr"
+                "RUST_LOG": "k4s=trace"
             },
             "cargo": {
+                "env": {
+                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                },
                 "args": [
                     "build",
                     "--bin=k4s",
-                    "--package=k4s-v2"
+                    "--package=k4s-v2",
                 ],
                 "filter": {
                     "name": "k4s",
                     "kind": "bin"
                 }
             },
+            "args": [
+                "build",
+                "--output",
+                "${workspaceFolder}/target/program.k4s",
+                "${workspaceFolder}/src/tests/k4sm/test1.k4sm",
+                "${workspaceFolder}/src/tests/rust/target/k4s-unknown-none/release/deps/*.bc"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug `k4s run`",
+            "env": {
+                "RUST_LOG": "k4s=trace"
+            },
+            "cargo": {
+                "env": {
+                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                },
+                "args": [
+                    "build",
+                    "--bin=k4s",
+                    "--package=k4s-v2",
+                ],
+                "filter": {
+                    "name": "k4s",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "run",
+                "${workspaceFolder}/target/program.k4s"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {
@@ -29,9 +66,12 @@
             "request": "launch",
             "name": "Debug unit tests in executable 'k4s-v2'",
             "env": {
-                "LLVM_SYS_130_PREFIX": "/usr"
+                "RUST_LOG": "k4s=trace"
             },
             "cargo": {
+                "env": {
+                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                },
                 "args": [
                     "test",
                     "--no-run",
