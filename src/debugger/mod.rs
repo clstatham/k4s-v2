@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::Read,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -84,9 +85,9 @@ slint::slint! {
     }
 }
 
-pub fn debugger_main() -> Result<()> {
+pub fn debugger_main(bin_path: PathBuf) -> Result<()> {
     let program = {
-        let mut file = File::open("target/test1.k4s")?;
+        let mut file = File::open(bin_path)?;
         let mut buf = Vec::new();
         file.read_to_end(&mut buf)?;
         buf

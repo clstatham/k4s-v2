@@ -21,6 +21,7 @@ anyhow = "1.0.70"
 env_logger = "0.10.0"
 log = "0.4.17"
 slint = "1.0.0"
+clap = { version = "4.2.1", features = ["derive"] }
 
 [profile.release]
 debug = 1

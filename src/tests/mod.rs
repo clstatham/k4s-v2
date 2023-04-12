@@ -23,7 +23,6 @@ pub fn test_assemble() -> Result<()> {
     Ok(())
 }
 
-#[doc(hidden)]
 pub fn test_run() -> Result<()> {
     let mut program = vec![];
     let mut file = File::open("target/test1.k4s")?;
@@ -50,6 +49,17 @@ pub fn test_llvm() -> Result<()> {
         }
     }
 
-    test_assemble()?;
+    let mut asm = String::new();
+    let mut file = File::open("src/tests/k4sm/test1.k4sm")?;
+    file.read_to_string(&mut asm)?;
+    let paths = glob::glob("src/tests/rust/target/*.k4sm")?;
+    for path in paths {
+        let mut file = File::open(path?)?;
+        file.read_to_string(&mut asm)?;
+    }
+    let mut assembler = AssemblyContext::new(asm);
+    let program = assembler.assemble()?;
+    let mut file = File::create("target/test1.k4s")?;
+    file.write_all(&program)?;
     Ok(())
 }

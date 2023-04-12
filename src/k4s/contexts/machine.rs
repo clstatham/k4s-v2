@@ -262,9 +262,6 @@ impl MachineContext {
                 &chunk[..16]
             ))?;
         
-        // dbg!(&instr);
-        
-
         if instr.opcode == Opcode::Hlt {
             return Ok(MachineState::Halt);
         }
