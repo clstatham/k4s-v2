@@ -7,7 +7,7 @@ use std::{
 use anyhow::Result;
 use llvm_ir::{
     types::{NamedStructDef, Typed, Types},
-    Constant, ConstantRef, Module, Name, Terminator, TypeRef,
+    Constant, ConstantRef, Module, Name, Terminator, Type, TypeRef,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -141,12 +141,12 @@ impl LlvmContext {
                     .initializer
                     .as_ref()
                     .expect("todo: non const globals"),
-                global.name.to_owned(),
+                global.name.to_owned().into(),
                 &types,
                 &self.globals,
             );
 
-            self.globals.insert(global.name.to_owned(), ssa);
+            self.globals.insert(global.name.to_owned().into(), ssa);
         }
 
         // phase 2: parse functions
@@ -268,13 +268,13 @@ impl LlvmContext {
             let mut bb_names = Vec::new();
             for bb in func.basic_blocks.iter() {
                 let mut exprs = Vec::new();
-                log::trace!("--> Entering basic block {}.", bb.name);
+                // log::trace!("--> Entering basic block {}.", bb.name);
                 let bb_name: Name =
                     format!("{}_{}", func_name.strip_prefix(), bb.name.strip_prefix()).into();
                 bb_names.push(bb_name.to_owned());
                 for instr in bb.instrs.iter() {
-                    log::trace!("-->     {}", instr);
-                    exprs.push(Expr::builder().push_comment(&format!("{}", instr)).build());
+                    // log::trace!("-->     {}", instr);
+                    // exprs.push(Expr::builder().push_comment(&format!("{}", instr)).build());
                     exprs.push(Expr::parse(instr, ctx, &types, &self.globals));
                 }
 
@@ -289,7 +289,7 @@ impl LlvmContext {
                         .build(),
                 );
 
-                log::trace!("-->     {}", bb.term);
+                // log::trace!("-->     {}", bb.term);
                 exprs.push(
                     Expr::builder()
                         .push_comment(&format!("{}", bb.term))
@@ -591,6 +591,31 @@ impl LlvmContext {
                 agg_zero.total_size_in_bytes(types)
             )
             .unwrap();
+        } else if let Constant::Array {
+            element_type,
+            elements,
+        } = agg.as_ref()
+        {
+            assert!(
+                matches!(element_type.as_ref(), Type::IntegerType { bits: 8 }),
+                "todo: non u8 arrays"
+            );
+            let data = elements
+                .iter()
+                .map(|elem| {
+                    if let Constant::Int { bits, value } = elem.as_ref() {
+                        assert_eq!(*bits, 8, "todo: non u8 arrays");
+                        *value as u8
+                    } else {
+                        todo!("non u8 arrays")
+                    }
+                })
+                .collect::<Vec<u8>>();
+            write!(out, "@{} align1 \"", agg_name.strip_prefix()).unwrap();
+            for elem in data {
+                write!(out, "\\x{:02x}", elem).unwrap();
+            }
+            writeln!(out, "\"").unwrap();
         } else {
             todo!("{:?}", agg.as_ref())
         }

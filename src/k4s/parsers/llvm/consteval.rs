@@ -44,9 +44,9 @@ impl Ssa {
                 .get_type(types),
                 // Token::Data(Data {
                 globals
-                    .get(ref_name)
+                    .get(&ref_name.to_owned().into())
                     .map(|ssa| ssa.storage().to_owned())
-                    .unwrap_or_else(|| Token::Label(Label::new_unlinked(ref_name.strip_prefix()))),
+                    .unwrap_or_else(|| Token::Label(Label::new_unlinked(ref_name.to_owned()))),
                 // Token::Label(Label::new_unlinked(ref_name.strip_prefix())),
                 // align: 1,
                 // data: Vec::new(),
@@ -104,7 +104,7 @@ impl Ssa {
                     }),
                     _ => todo!("{:?}", element_type.as_ref()),
                 };
-                Self::new(name, ty, storage, None) // todo: set agg_const when doing arrays of non-u8's
+                Self::new(name, ty, storage, Some(con.to_owned()))
             }
             Constant::AggregateZero(agg) => Self::new(
                 name.to_owned(),

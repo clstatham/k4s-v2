@@ -1,23 +1,17 @@
-%addnums
+@global_0 align1 "\x48\x65\x6c\x6c\x6f\x20\x46\x72\x6f\x6d\x20\x54\x68\x65\x20\x5a\x69\x67\x20\x4b\x65\x72\x6e\x65\x6c\x21\x00"
+%kernel_main
     push i64 bp
     mov i64 bp sp
-    mov i32 [-8+bp] rg
-    mov i32 [-16+bp] rh
-    sub i64 sp $24
-    jmp i64 %addnums_Entry
-%addnums_Entry
-;call @llvm.dbg.value(<metadata>, <metadata>, <metadata>) (with debugloc)
-    call i64 %llvm_dbg_value
-;call @llvm.dbg.value(<metadata>, <metadata>, <metadata>) (with debugloc)
-    call i64 %llvm_dbg_value
-;%2 = add i32 %1, i32 %0 (with debugloc)
-    mov i32 [-24+bp] [-16+bp]
-    add i32 [-24+bp] [-8+bp]
-    mov i64 rb %addnums_Entry
-;ret i32 %2 (with debugloc)
-    mov i32 ra [-24+bp]
-    jmp i64 %addnums_ret
-%addnums_ret
+    sub i64 sp $0
+    jmp i64 %kernel_main_Entry
+%kernel_main_Entry
+    mov i64 rg @global_0
+    call i64 %printstrln_asm
+    call i64 %hlt
+    mov i64 rb %kernel_main_Entry
+;unreachable (with debugloc)
+    und 
+%kernel_main_ret
     mov i64 sp bp
     pop i64 bp
     ret 

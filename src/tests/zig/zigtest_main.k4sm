@@ -1,12 +1,125 @@
 !ent %_start @ 0x1000
 
 %_start
-    mov i32 rg $42
-    mov i32 rh $69
-    call i64 %addnums
+    call i64 %kernel_main
     printi i32 ra
     hlt
     und
 
 %llvm_dbg_value
     ret
+
+
+%printstrln_asm
+    push i64 bp
+    mov i64 bp sp
+    push i64 rb
+    mov i64 rb rg
+%printstrln_asm_loop
+    cmp i8 [rb] rz
+    jeq i64 %printstrln_asm_ret
+    printc i8 [rb]
+    add i64 rb $1
+    jmp i64 %printstrln_asm_loop
+%printstrln_asm_ret
+    printc i8 $0xa ; newline
+    pop i64 rb
+    mov i64 sp bp
+    pop i64 bp
+    ret
+
+
+%printptrln_asm
+    push i64 bp
+    mov i64 bp sp
+    push i64 rb
+    push i64 rc
+    mov i64 rb rg
+    mov i64 rc rz
+%printptrln_asm_loop
+    cmp i64 rc rh
+    jeq i64 %prinptrln_asm_ret
+    printc i8 [rb]
+    add i64 rb $1
+    add i64 rc $1
+    jmp i64 %printptrln_asm_loop
+%prinptrln_asm_ret
+    printc i8 $0xa ; newline
+    pop i64 rc
+    pop i64 rb
+    mov i64 sp bp
+    pop i64 bp
+    ret
+
+
+
+
+%llvm_memcpy_p0i8_p0i8_i64
+    push i64 bp
+    push i64 rb
+    push i64 rd
+    push i64 rc
+    mov i64 rb rg ; dest
+    mov i64 rd rh ; src
+    ; ri = len
+    mov i64 rc rz
+%llvm_memcpy_p0i8_p0i8_i64_loop
+    cmp i64 rc ri
+    jeq i64 %llvm_memcpy_p0i8_p0i8_i64_end
+    mov i8 [rb] [rd]
+    add i64 rc $1
+    add i64 rb $1
+    add i64 rd $1
+    jmp i64 %llvm_memcpy_p0i8_p0i8_i64_loop
+%llvm_memcpy_p0i8_p0i8_i64_end
+    pop i64 rc
+    pop i64 rd
+    pop i64 rb
+    pop i64 bp
+    ret
+
+%llvm_memset_p0i8_i64
+    push i64 bp
+    push i64 rb
+    push i64 rc
+    mov i64 rb rg ; dest
+    ; ri = len
+    mov i64 rc rz
+%llvm_memset_p0i8_i64_loop
+    cmp i64 rc ri
+    jeq i64 %llvm_memset_p0i8_i64_end
+    mov i8 [rb] rh
+    add i64 rc $1
+    add i64 rb $1
+    jmp i64 %llvm_memset_p0i8_i64_loop
+%llvm_memset_p0i8_i64_end
+    pop i64 rc
+    pop i64 rb
+    pop i64 bp
+    ret
+
+%llvm_assume
+    cmp i8 rg rz
+    jne i64 %llvm_assume_passed
+    und
+%llvm_assume_passed
+    ret
+
+%llvm_lifetime_start_p0i8
+    ret
+
+%llvm_lifetime_end_p0i8
+    ret
+
+
+%printi
+    printi i64 rg
+    ret
+
+%printc
+    printc i8 rg
+    ret
+
+%hlt
+    hlt
+    und

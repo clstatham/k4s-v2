@@ -1415,7 +1415,6 @@ dependencies = [
  "env_logger",
  "glob",
  "llvm-ir",
- "llvm-sys",
  "log",
  "nom",
  "rustc-demangle",
@@ -1502,8 +1501,7 @@ checksum = "d59d8c75012853d2e872fb56bc8a2e53718e2cafe1a4c823143141c6d90c322f"
 [[package]]
 name = "llvm-ir"
 version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a4ab3db6c6256b7bfc0f19f8ca8e705ac40cf07a45a7555d0d53fb97681bc70"
+source = "git+https://github.com/clstatham/llvm-ir#641d410c946ea2da29307e61a8b5af966e76fa98"
 dependencies = [
  "either",
  "llvm-sys",
