@@ -529,7 +529,7 @@ impl LlvmContext {
         } = agg.as_ref()
         {
             // need to insert each element as a data tag with label pointers to their beginnings
-            writeln!(out, "@{} align1 \"\"", agg_name.strip_prefix()).unwrap();
+            writeln!(out, "@{} align0 resb 0", agg_name.strip_prefix()).unwrap();
             for (i, elem) in values.iter().enumerate() {
                 let elem_name = format!("@{}_elem{}", agg_name.strip_prefix(), i);
                 let elem = Ssa::parse_const(elem, elem_name.to_owned().into(), types, globals);
@@ -558,7 +558,7 @@ impl LlvmContext {
                             writeln!(out, "{} ({}+@{})", elem_name, *off, lab.name).unwrap();
                         }
                         Token::Label(_lab) => {
-                            writeln!(out, "{} align1 \"\"", elem_name).unwrap();
+                            writeln!(out, "{} align0 resb 0", elem_name).unwrap();
                         }
                         _ => todo!("{:?}", elem.storage()),
                     }

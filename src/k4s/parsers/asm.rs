@@ -276,6 +276,7 @@ pub fn data(i: &str) -> IResult<&str, Token> {
             ))),
             space1,
             alt((
+                value(0, tag("align0")),
                 value(1, tag("align1")),
                 value(2, tag("align2")),
                 value(4, tag("align4")),
@@ -450,12 +451,7 @@ pub fn size(asm: &str) -> IResult<&str, InstrSize> {
 }
 
 impl Token {
-    pub fn assemble(
-        &mut self,
-        linked_refs: &FxHashMap<String, u64>,
-        pc: u64,
-        line: &mut Vec<u8>,
-    ) -> Option<(Label, u64)> {
+    pub fn assemble(&mut self, pc: u64, line: &mut Vec<u8>) -> Option<(Label, u64)> {
         match self {
             Token::I8(val) => line.extend_from_slice(&[LITERAL, *val]),
             Token::I16(val) => {
@@ -492,33 +488,21 @@ impl Token {
             }
             Token::LabelOffset(off, lab) => {
                 line.extend_from_slice(&[LITERAL]);
-                // ctx.unlinked_offset_refs
-                //     .entry((*off, lab.to_owned()))
-                //     .or_insert(FxHashSet::default())
-                //     .insert(ctx.pc);
                 line.extend_from_slice(&[0; 8]);
                 return Some((lab.to_owned(), pc + 1));
             }
             Token::Label(lab) => {
                 line.extend_from_slice(&[LITERAL]);
-                // ctx.unlinked_refs
-                //     .entry(lab.to_owned())
-                //     .or_insert(FxHashSet::default())
-                //     .insert(ctx.pc);
                 line.extend_from_slice(&[0; 8]);
                 return Some((lab.to_owned(), pc + 1));
             }
             Token::Addr(adr) => {
                 line.extend_from_slice(&[ADDRESS]);
-                adr.assemble(linked_refs, pc, line);
+                adr.assemble(pc + 1, line);
             }
             Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
             Token::Data(data) => {
                 line.extend_from_slice(&[LITERAL]);
-                // ctx.unlinked_refs
-                //     .entry(data.label.to_owned())
-                //     .or_insert(FxHashSet::default())
-                //     .insert(ctx.pc);
                 line.extend_from_slice(&[0; 8]);
                 return Some((data.label.to_owned(), pc + 1));
             }
@@ -564,7 +548,6 @@ impl Instr {
 
     pub fn assemble(
         &mut self,
-        linked_refs: &FxHashMap<String, u64>,
         mut pc: u64,
         line: &mut Vec<u8>,
     ) -> Result<(usize, Vec<(Label, u64)>)> {
@@ -575,15 +558,14 @@ impl Instr {
         pc += 2;
         let mut refs = Vec::new();
         if let Some(ref mut arg) = self.arg0 {
-            if let Some(r) = arg.assemble(linked_refs, pc, line) {
+            if let Some(r) = arg.assemble(pc, line) {
                 refs.push(r);
             }
             pc += arg.mc_size_in_bytes() as u64;
         }
         if let Some(ref mut arg) = self.arg1 {
-            if let Some(r) = arg.assemble(linked_refs, pc, line) {
+            if let Some(r) = arg.assemble(pc, line) {
                 refs.push(r);
-                // pc += 9;
             }
             pc += arg.mc_size_in_bytes() as u64;
         }

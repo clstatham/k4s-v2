@@ -76,7 +76,7 @@ impl Ssa {
                                 .unwrap_or(&name.strip_prefix())
                                 .to_string(),
                         ),
-                        align: 1,
+                        align: 0,
                         data: Vec::new(),
                     }),
                     Some(con.to_owned()),

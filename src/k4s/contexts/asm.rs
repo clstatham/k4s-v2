@@ -299,7 +299,7 @@ impl AssemblyContext {
         let mut in_header = true;
         let mut in_function = false;
         let mut current_function = None;
-        let mut data_lines = FxHashMap::default();
+        let mut data_lines = Vec::default();
         for (line_no, line) in self.input.clone().lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
@@ -313,6 +313,14 @@ impl AssemblyContext {
                 if let Ok((_junk, lit)) = literal(InstrSize::I64, string) {
                     let lit = lit.as_integer::<u64>().unwrap();
                     data.data = lit.to_bytes().to_vec();
+                } else if let Some(amount) = string.strip_prefix("resb") {
+                    let amount = amount.trim();
+                    let amount = if let Some(amount) = amount.strip_prefix("0x") {
+                        u64::from_str_radix(amount, 16).unwrap()
+                    } else {
+                        amount.parse::<u64>().unwrap()
+                    };
+                    data.data.extend_from_slice(&vec![0u8; amount as usize]);
                 } else if let Some(string) = string.strip_prefix('"') {
                     if let Some(string) = string.strip_suffix('"') {
                         let bytes = string.to_owned().into_bytes();
@@ -340,7 +348,7 @@ impl AssemblyContext {
                 } else {
                     return Err(Error::msg(format!("Invalid data on line {line_no}")));
                 }
-                data_lines.insert(data.label.to_owned(), parsed_line.to_owned());
+                data_lines.push(parsed_line.to_owned());
                 // self.push_program_bytes(&data.data);
             } else if !junk.is_empty() && !junk.trim().starts_with(';') {
                 log::warn!("Ignoring junk after line {line_no}: {junk}");
@@ -449,7 +457,7 @@ impl AssemblyContext {
             block.loc = self.pc;
             for line in block.lines.iter_mut() {
                 if let ParsedLine::Instr(ref mut instr) = line.asm {
-                    let (size, refs) = instr.assemble(&self.linked_refs, self.pc, &mut line.mc)?;
+                    let (size, refs) = instr.assemble(self.pc, &mut line.mc)?;
                     for (refr, loc) in refs {
                         self.unlinked_refs
                             .entry(refr.name)
@@ -469,18 +477,18 @@ impl AssemblyContext {
         self.pc = self.entry_point;
         for block in kept_blocks.iter_mut() {
             for line in block.lines.iter_mut() {
-                if let ParsedLine::Data(ref data) = line.asm {
-                    self.push_program_bytes(&vec![0; data.align - self.pc as usize % data.align]);
-                    self.push_program_bytes(&data.data);
-                } else {
-                    self.push_program_bytes(&line.mc);
-                }
+                self.push_program_bytes(&line.mc);
             }
         }
-        for (_, data_line) in data_lines {
+        for data_line in data_lines {
             if let ParsedLine::Data(data) = data_line.asm {
                 if !self.linked_refs.contains_key(&data.label.name) {
-                    self.push_program_bytes(&vec![0; data.align - self.pc as usize % data.align]);
+                    if data.align > 0 {
+                        self.push_program_bytes(&vec![
+                            0;
+                            data.align - self.pc as usize % data.align
+                        ]);
+                    }
                     self.linked_refs
                         .insert(data.label.name.to_owned(), self.pc + 1);
                     self.push_program_bytes(&data.data);
@@ -488,13 +496,6 @@ impl AssemblyContext {
             }
         }
 
-        // log::debug!(
-        //     "Found {} unlinked refs.",
-        //     self.unlinked_refs
-        //         .values()
-        //         .map(|refs| refs.len())
-        //         .sum::<usize>()
-        // );
         log::debug!("Found {} linked references.", self.linked_refs.len());
 
         let mut undefined_count: usize = 0;
