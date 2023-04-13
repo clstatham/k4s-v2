@@ -108,26 +108,28 @@ pub fn debugger_main(bin_path: PathBuf) -> Result<()> {
         let mut emu = emu_handle.lock().unwrap();
 
         match emu.step() {
-            Err(e) => {
-                dbgr.set_error_text(format!("{}", e).into());
+            Err(_) => {}
+            Ok(MachineState::ContDontUpdatePc | MachineState::Continue) => {}
+            Ok(MachineState::Halt) => {
+                return;
             }
-            Ok(MachineState::ContDontUpdatePc | MachineState::Continue) => {
-                dbgr.set_registers_text(format!("{}", emu.regs).into());
-                dbgr.set_program_text(emu.instr_history.join("\n").into());
-                let mut stack_text = {
-                    emu.stack_frame
-                        .iter()
-                        .copied()
-                        .map(|(adr, val)| format!("bp - {:>5}: {:016x}", adr, val))
-                        .collect::<Vec<String>>()
-                        .join("\n")
-                };
-                stack_text.push('\n');
-                dbgr.set_stack_text(stack_text.into());
-                dbgr.set_output_text(emu.output_history.clone().into());
-            }
-            Ok(MachineState::Halt) => {}
         }
+        if let Some(e) = emu.error.as_ref() {
+            dbgr.set_error_text(format!("{}", e).into());
+        }
+        dbgr.set_registers_text(format!("{}", emu.regs).into());
+        dbgr.set_program_text(emu.instr_history.join("\n").into());
+        let mut stack_text = {
+            emu.stack_frame
+                .iter()
+                .copied()
+                .map(|(adr, val)| format!("bp - {:>5}: {:016x}", adr, val))
+                .collect::<Vec<String>>()
+                .join("\n")
+        };
+        stack_text.push('\n');
+        dbgr.set_stack_text(stack_text.into());
+        dbgr.set_output_text(emu.output_history.clone().into());
     });
 
     dbgr.on_cont_program(move || {
@@ -136,13 +138,15 @@ pub fn debugger_main(bin_path: PathBuf) -> Result<()> {
         let dbgr = dbgr_handle_on_cont_program.unwrap();
         loop {
             match emu.step() {
-                Err(e) => {
-                    dbgr.set_error_text(format!("{}", e).into());
+                Err(_) => break,
+                Ok(MachineState::ContDontUpdatePc | MachineState::Continue) => {}
+                Ok(MachineState::Halt) => {
                     break;
                 }
-                Ok(MachineState::ContDontUpdatePc | MachineState::Continue) => {}
-                Ok(MachineState::Halt) => break,
             }
+        }
+        if let Some(e) = emu.error.as_ref() {
+            dbgr.set_error_text(format!("{}", e).into());
         }
         dbgr.set_registers_text(format!("{}", emu.regs).into());
         dbgr.set_program_text(emu.instr_history.join("\n").into());

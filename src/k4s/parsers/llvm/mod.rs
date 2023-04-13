@@ -4,6 +4,7 @@ use llvm_ir::{
     types::{NamedStructDef, Typed, Types},
     ConstantRef, FPPredicate, Instruction, IntPredicate, Name, Operand, Type, TypeRef,
 };
+use rustc_hash::FxHashMap;
 
 use crate::k4s::{
     contexts::llvm::FunctionContext, parsers::llvm::consteval::NameExt, Instr, InstrSize, Label,
@@ -43,11 +44,16 @@ impl Ssa {
         }
     }
 
-    pub fn parse_operand(op: &Operand, ctx: &mut FunctionContext, types: &Types) -> Self {
+    pub fn parse_operand(
+        op: &Operand,
+        ctx: &mut FunctionContext,
+        types: &Types,
+        globals: &FxHashMap<Name, Ssa>,
+    ) -> Self {
         match op {
             Operand::LocalOperand { name, ty } => ctx.get_or_push(name, ty, types),
             Operand::MetadataOperand => todo!("metadata operand"),
-            Operand::ConstantOperand(con) => Self::parse_const(con, ctx.gen_name(), types),
+            Operand::ConstantOperand(con) => Self::parse_const(con, ctx.gen_name(), types, globals),
         }
     }
 
@@ -169,11 +175,16 @@ impl Expr {
         self.sequence.push(ExprElem::Comment(comment.to_owned()));
     }
 
-    pub fn parse(instr: &Instruction, ctx: &mut FunctionContext, types: &Types) -> Expr {
+    pub fn parse(
+        instr: &Instruction,
+        ctx: &mut FunctionContext,
+        types: &Types,
+        globals: &FxHashMap<Name, Ssa>,
+    ) -> Expr {
         macro_rules! arith_instr {
             ($instr:ident, $opcode:ident) => {{
-                let a = Ssa::parse_operand(&$instr.operand0, ctx, types);
-                let b = Ssa::parse_operand(&$instr.operand1, ctx, types);
+                let a = Ssa::parse_operand(&$instr.operand0, ctx, types, globals);
+                let b = Ssa::parse_operand(&$instr.operand1, ctx, types, globals);
                 assert_eq!(a.ty().as_ref(), b.ty().as_ref());
                 let dest = ctx.get_or_push(&$instr.dest, &a.ty(), types);
                 let expr = Expr::builder()
@@ -196,7 +207,7 @@ impl Expr {
         }
         macro_rules! cast_instr {
             ($instr:ident) => {{
-                let ptr = Ssa::parse_operand(&$instr.operand, ctx, types);
+                let ptr = Ssa::parse_operand(&$instr.operand, ctx, types, globals);
                 let dest = ctx.get_or_push(&$instr.dest, &$instr.to_type, types);
                 let expr = Expr::builder()
                     .push_instr(Instr::new(
@@ -243,7 +254,7 @@ impl Expr {
                 expr
             }
             Instruction::Load(instr) => {
-                let src = Ssa::parse_operand(&instr.address, ctx, types);
+                let src = Ssa::parse_operand(&instr.address, ctx, types, globals);
                 let dest =
                     ctx.get_or_push(&instr.dest, src.pointee_type().as_ref().unwrap(), types);
                 let tmp = ctx.any_register().unwrap();
@@ -265,8 +276,8 @@ impl Expr {
                 expr
             }
             Instruction::Store(instr) => {
-                let src = Ssa::parse_operand(&instr.value, ctx, types);
-                let dest = Ssa::parse_operand(&instr.address, ctx, types);
+                let src = Ssa::parse_operand(&instr.value, ctx, types, globals);
+                let dest = Ssa::parse_operand(&instr.address, ctx, types, globals);
                 let tmp = ctx.any_register().unwrap();
                 let expr = Expr::builder()
                     .push_instr(Instr::new(
@@ -307,7 +318,13 @@ impl Expr {
             Instruction::Call(instr) => {
                 let func = if instr.function.is_right() {
                     let func = instr.function.as_ref().unwrap_right();
-                    Ssa::parse_operand(func, ctx, types)
+                    let func_ssa = Ssa::parse_operand(func, ctx, types, globals);
+                    if let Operand::LocalOperand { .. } = func {
+                        dbg!("Local Operand", func.get_type(types), func_ssa.storage());
+                    }
+                    // dbg!("Constant Operand", func.get_type(types), func_ssa.storage());
+                    // }
+                    func_ssa
                 } else {
                     let func_name = ctx.name().to_owned().strip_prefix();
                     let asm = instr.function.as_ref().unwrap_left();
@@ -329,7 +346,7 @@ impl Expr {
                 for (arg, _attrs) in instr.arguments.iter() {
                     if let Operand::MetadataOperand = arg {
                     } else {
-                        args.push(Ssa::parse_operand(arg, ctx, types));
+                        args.push(Ssa::parse_operand(arg, ctx, types, globals));
                     }
                 }
                 let dest = if let Type::FuncType { result_type, .. } = func.ty().as_ref() {
@@ -342,9 +359,7 @@ impl Expr {
                             .map(|dest| ctx.push(dest.to_owned(), result_type.to_owned(), types))
                     }
                 } else if let Type::PointerType { pointee_type, .. } = func.ty().as_ref() {
-                    if let Type::FuncType { result_type, .. } =
-                        pointee_type.get_type(types).as_ref()
-                    {
+                    if let Type::FuncType { result_type, .. } = pointee_type.as_ref() {
                         if let Type::VoidType = result_type.as_ref() {
                             None
                         } else {
@@ -401,6 +416,7 @@ impl Expr {
                     Some(func.storage().to_owned()),
                     None,
                 ));
+
                 if let Some(dest) = dest {
                     expr.push_instr(Instr::new(
                         Opcode::Mov,
@@ -439,7 +455,7 @@ impl Expr {
                 cast_instr!(instr)
             }
             Instruction::SExt(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types);
+                let src = Ssa::parse_operand(&instr.operand, ctx, types, globals);
                 let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
                 let expr = Expr::builder()
                     .push_instr(Instr::new(
@@ -459,8 +475,8 @@ impl Expr {
                 expr
             }
             Instruction::ICmp(instr) => {
-                let a = Ssa::parse_operand(&instr.operand0, ctx, types);
-                let b = Ssa::parse_operand(&instr.operand1, ctx, types);
+                let a = Ssa::parse_operand(&instr.operand0, ctx, types, globals);
+                let b = Ssa::parse_operand(&instr.operand1, ctx, types, globals);
                 let dest = ctx.get_or_push(
                     &instr.dest,
                     &Type::IntegerType { bits: 1 }.get_type(types),
@@ -554,8 +570,8 @@ impl Expr {
             }
 
             Instruction::FCmp(instr) => {
-                let a = Ssa::parse_operand(&instr.operand0, ctx, types);
-                let b = Ssa::parse_operand(&instr.operand1, ctx, types);
+                let a = Ssa::parse_operand(&instr.operand0, ctx, types, globals);
+                let b = Ssa::parse_operand(&instr.operand1, ctx, types, globals);
                 let dest = ctx.get_or_push(
                     &instr.dest,
                     &Type::IntegerType { bits: 1 }.get_type(types),
@@ -663,20 +679,20 @@ impl Expr {
                 expr.build()
             }
             Instruction::GetElementPtr(instr) => {
-                let addr = Ssa::parse_operand(&instr.address, ctx, types);
+                let addr = Ssa::parse_operand(&instr.address, ctx, types, globals);
 
                 let indices = instr
                     .indices
                     .iter()
-                    .map(|idx| Ssa::parse_operand(idx, ctx, types))
+                    .map(|idx| Ssa::parse_operand(idx, ctx, types, globals))
                     .collect::<Vec<_>>();
 
                 let (expr, _dest) = Self::gep(instr.dest.to_owned(), addr, indices, ctx, types);
                 expr
             }
             Instruction::InsertValue(instr) => {
-                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types);
-                let element = Ssa::parse_operand(&instr.element, ctx, types);
+                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types, globals);
+                let element = Ssa::parse_operand(&instr.element, ctx, types, globals);
                 let dest = ctx.get_or_push(&instr.dest, &agg.ty(), types);
                 let mut current_ty = dest.ty().as_ref().to_owned();
                 let mut offset: u64 = 0;
@@ -747,7 +763,7 @@ impl Expr {
                 expr
             }
             Instruction::ExtractValue(instr) => {
-                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types);
+                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types, globals);
                 let mut current_ty = agg.ty().as_ref().to_owned();
                 let mut offset: u64 = 0;
                 for idx in instr.indices.iter() {
@@ -835,7 +851,7 @@ impl Expr {
                         id,
                         loc.strip_prefix()
                     );
-                    let op = Ssa::parse_operand(op, ctx, types);
+                    let op = Ssa::parse_operand(op, ctx, types, globals);
                     let loc = format!("{}_{}", ctx.name().strip_prefix(), loc.strip_prefix());
                     let loc = Token::Label(Label::new_unlinked(loc));
                     ops.push(op);
@@ -875,9 +891,9 @@ impl Expr {
                 expr
             }
             Instruction::Select(instr) => {
-                let cond = Ssa::parse_operand(&instr.condition, ctx, types);
-                let true_val = Ssa::parse_operand(&instr.true_value, ctx, types);
-                let false_val = Ssa::parse_operand(&instr.false_value, ctx, types);
+                let cond = Ssa::parse_operand(&instr.condition, ctx, types, globals);
+                let true_val = Ssa::parse_operand(&instr.true_value, ctx, types, globals);
+                let false_val = Ssa::parse_operand(&instr.false_value, ctx, types, globals);
                 assert_eq!(true_val.ty().as_ref(), false_val.ty().as_ref());
                 let dest = ctx.get_or_push(&instr.dest, &true_val.ty(), types);
                 let id = ctx.gen_name().strip_prefix();
@@ -965,48 +981,13 @@ impl Expr {
         let mut expr = Expr::new();
 
         let tmp_dest = ctx.any_register().unwrap();
+        expr.push_instr(Instr::new(
+            Opcode::Mov,
+            InstrSize::I64,
+            Some(Token::Register(tmp_dest)),
+            Some(addr.storage().to_owned()),
+        ));
 
-        if let Some((off, reg)) = addr.get_reg_offset() {
-            expr.push_instr(Instr::new(
-                Opcode::Mov,
-                InstrSize::I64,
-                Some(Token::Register(tmp_dest)),
-                Some(Token::Register(reg)),
-            ));
-            expr.push_instr(Instr::new(
-                Opcode::Sub,
-                InstrSize::I64,
-                Some(Token::Register(tmp_dest)),
-                Some(Token::I64(-off as u64)),
-            ));
-        } else if let Some((off, lab)) = addr.get_label_offset() {
-            expr.push_instr(Instr::new(
-                Opcode::Mov,
-                InstrSize::I64,
-                Some(Token::Register(tmp_dest)),
-                Some(Token::Label(lab)),
-            ));
-            expr.push_instr(Instr::new(
-                Opcode::Add,
-                InstrSize::I64,
-                Some(Token::Register(tmp_dest)),
-                Some(Token::I64(off as u64)),
-            ));
-        } else if let Token::Label(lab) = addr.storage() {
-            expr.push_instr(Instr::new(
-                Opcode::Mov,
-                InstrSize::I64,
-                Some(Token::Register(tmp_dest)),
-                Some(Token::Label(lab.to_owned())),
-            ));
-        } else {
-            unreachable!("Addr of GEP must be a pointer: {:?}", addr.storage())
-        }
-
-        // let mut current_type = Type::PointerType {
-        //     pointee_type: addr.ty(),
-        //     addr_space: 0,
-        // };
         let mut current_type = addr.ty().as_ref().to_owned();
 
         for idx in indices.iter() {
@@ -1079,6 +1060,11 @@ impl Expr {
                 ty => {
                     todo!("{:?}", ty)
                 }
+            }
+        }
+        if let Type::PointerType { pointee_type, .. } = current_type.to_owned() {
+            if let Type::FuncType { .. } = pointee_type.as_ref() {
+                dbg!("GEP to a function");
             }
         }
 

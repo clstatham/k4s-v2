@@ -64,6 +64,33 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug `k4s debug`",
+            "env": {
+                "RUST_LOG": "k4s=trace"
+            },
+            "cargo": {
+                "env": {
+                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                },
+                "args": [
+                    "build",
+                    "--bin=k4s",
+                    "--package=k4s-v2",
+                ],
+                "filter": {
+                    "name": "k4s",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "debug",
+                "${workspaceFolder}/target/program.k4s"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug unit tests in executable 'k4s-v2'",
             "env": {
                 "RUST_LOG": "k4s=trace"

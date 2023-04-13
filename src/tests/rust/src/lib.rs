@@ -72,7 +72,7 @@ pub extern "C" fn kernel_main(boot_info_addr: *const BootInfo) -> ! {
     // let boot_info = unsafe { &*boot_info_addr };
     // printi(boot_info.max_mem);
     println("Hello from the kernel!");
-    // writeln!(PrintcWriter, "Hello from writeln!").unwrap();
+    writeln!(PrintcWriter, "Hello from writeln!").unwrap();
     // panic!();
     unsafe { hlt() }
 }

@@ -3,13 +3,19 @@ use llvm_ir::{
     types::{FPType, NamedStructDef, Typed, Types},
     Constant, ConstantRef, Name, Type,
 };
+use rustc_hash::FxHashMap;
 
 use crate::k4s::{Data, InstrSize, Label, Token};
 
 use super::Ssa;
 
 impl Ssa {
-    pub fn parse_const(con: &ConstantRef, name: Name, types: &Types) -> Self {
+    pub fn parse_const(
+        con: &ConstantRef,
+        name: Name,
+        types: &Types,
+        globals: &FxHashMap<Name, Ssa>,
+    ) -> Self {
         let ty = con.get_type(types);
         match con.as_ref() {
             Constant::Int { value, .. } => Self::new(
@@ -26,14 +32,25 @@ impl Ssa {
                 };
                 Self::new(name, ty, tok, None)
             }
-            Constant::GlobalReference { name: ref_name, ty } => Self::new(
+            Constant::GlobalReference {
+                name: ref_name,
+                ty: ref_ty,
+            } => Self::new(
                 name,
                 Type::PointerType {
-                    pointee_type: ty.to_owned(),
+                    pointee_type: ref_ty.to_owned(),
                     addr_space: 0,
                 }
                 .get_type(types),
-                Token::Label(Label::new_unlinked(ref_name.strip_prefix())),
+                // Token::Data(Data {
+                globals
+                    .get(ref_name)
+                    .map(|ssa| ssa.storage().to_owned())
+                    .unwrap_or_else(|| Token::Label(Label::new_unlinked(ref_name.strip_prefix()))),
+                // Token::Label(Label::new_unlinked(ref_name.strip_prefix())),
+                // align: 1,
+                // data: Vec::new(),
+                // }),
                 None,
             ),
             Constant::Undef(ty) => Self::new(
@@ -52,12 +69,16 @@ impl Ssa {
                 Self::new(
                     name.to_owned(),
                     ty,
-                    Token::Label(Label::new_unlinked(
-                        str_name
-                            .as_ref()
-                            .unwrap_or(&name.strip_prefix())
-                            .to_string(),
-                    )),
+                    Token::Data(Data {
+                        label: Label::new_unlinked(
+                            str_name
+                                .as_ref()
+                                .unwrap_or(&name.strip_prefix())
+                                .to_string(),
+                        ),
+                        align: 1,
+                        data: Vec::new(),
+                    }),
                     Some(con.to_owned()),
                 )
             }
@@ -74,7 +95,7 @@ impl Ssa {
                             .enumerate()
                             .map(|(i, elem)| {
                                 let name = format!("{}_elem{}", name.to_owned().strip_prefix(), i);
-                                Self::parse_const(elem, name.into(), types)
+                                Self::parse_const(elem, name.into(), types, globals)
                                     .storage()
                                     .as_integer()
                                     .unwrap()
@@ -96,15 +117,15 @@ impl Ssa {
                 None,
             ),
             Constant::BitCast(cast) => {
-                let op = Self::parse_const(&cast.operand, name.to_owned(), types);
+                let op = Self::parse_const(&cast.operand, name.to_owned(), types, globals);
                 Self::new(name, cast.to_type.to_owned(), op.storage().to_owned(), None)
             }
             Constant::GetElementPtr(gep) => {
-                let addr = Self::parse_const(&gep.address, name.to_owned(), types);
+                let addr = Self::parse_const(&gep.address, name.to_owned(), types, globals);
                 let indices = gep
                     .indices
                     .iter()
-                    .map(|idx| Self::parse_const(idx, name.to_owned(), types))
+                    .map(|idx| Self::parse_const(idx, name.to_owned(), types, globals))
                     .collect::<Vec<_>>();
                 let mut current_type = addr.ty().as_ref().to_owned();
                 let mut total = 0;
@@ -147,7 +168,9 @@ impl Ssa {
                     }
                 }
 
-                let addr_label = if let Token::Label(lab) = addr.storage() {
+                let addr_label = if let Token::Data(data) = addr.storage() {
+                    data.label.clone()
+                } else if let Token::Label(lab) = addr.storage() {
                     lab.clone()
                 } else {
                     unreachable!()

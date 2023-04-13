@@ -208,6 +208,7 @@ pub struct MachineContext {
     pub instr_history: Vec<String>,
     pub output_history: String,
     pub stack_frame: Vec<(u64, u64)>,
+    pub error: Option<Error>,
 }
 
 impl MachineContext {
@@ -250,69 +251,67 @@ impl MachineContext {
             instr_history: Vec::new(),
             stack_frame: Vec::new(),
             output_history: String::new(),
+            error: None,
         })
     }
 
     pub fn step(&mut self) -> Result<MachineState> {
-        let chunk = &self.ram[self.regs.pc as usize..self.regs.pc as usize + 64];
+        let chunk = self.ram.get(self.regs.pc as usize..self.regs.pc as usize + 64).ok_or(Error::msg("PC register out of bounds").context(format!("PC = {:x}", self.regs.pc)))?;
         let (_, instr) = Instr::disassemble_next(chunk)
             .map_err(|err| err.to_owned())
             .context(format!(
-                "Error parsing instruction\nFirst 16 bytes:\n{:?}",
+                "Error parsing instruction\nFirst 16 bytes:\n{:x?}\nor\n{:?}",
+                &chunk[..16],
                 &chunk[..16]
             ))?;
-        
-        if instr.opcode == Opcode::Hlt {
-            return Ok(MachineState::Halt);
-        }
 
-        let res = match self.emulate_instr(&instr)? {
+        let pc = self.regs.pc;
+        log::debug!("\n{}", self.regs);
+        if let Some(tok) = &instr.arg0 {
+            let tok_eval = self
+                .eval_token(tok.to_owned(), InstrSize::I64)?
+                .as_integer::<u64>()
+                .unwrap();
+            log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
+        }
+        if let Some(tok) = &instr.arg1 {
+            let tok_eval = self
+                .eval_token(tok.to_owned(), InstrSize::I64)?
+                .as_integer::<u64>()
+                .unwrap();
+            log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
+        }
+        
+        self.instr_history.push(format!("{:016x} --> {}", pc, instr.display_with_symbols(&self.debug_symbols)));
+        self.stack_frame = {
+            let bp = self.regs.bp - self.regs.bp % 8;
+            let sp = self.regs.sp - self.regs.sp % 8;
+            let mut out = Vec::new();
+            for adr in (sp..=bp).rev().step_by(8) {
+                out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).as_integer().unwrap()));
+            }
+            out
+        };
+        log::debug!(
+            "{:016x} --> {}",
+            pc,
+            &instr.display_with_symbols(&self.debug_symbols)
+        );
+
+        match self.emulate_instr(&instr)? {
             MachineState::Continue => {
                 self.regs.pc += instr.mc_size_in_bytes() as u64;
                 Ok(MachineState::Continue)
             }
             MachineState::ContDontUpdatePc => {
-                assert_ne!(self.regs.pc, 0, "jump to null address");
-                Ok(MachineState::Continue)
+                if self.regs.pc == 0 {
+                    self.error = Some(Error::msg("Jump to null address"));
+                    Err(Error::msg("Jump to null address"))
+                } else {
+                    Ok(MachineState::Continue)
+                }
             }
             MachineState::Halt => Ok(MachineState::Halt),
-        };
-        match res {
-            Ok(MachineState::Halt) => Ok(MachineState::Halt),
-            Ok(_) => {
-                log::debug!("\n{}", self.regs);
-                if let Some(tok) = &instr.arg0 {
-                    let tok_eval = self
-                        .eval_token(tok.to_owned(), InstrSize::I64)?
-                        .as_integer::<u64>()
-                        .unwrap();
-                    log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
-                }
-                if let Some(tok) = &instr.arg1 {
-                    let tok_eval = self
-                        .eval_token(tok.to_owned(), InstrSize::I64)?
-                        .as_integer::<u64>()
-                        .unwrap();
-                    log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
-                }
-                log::debug!(
-                    "{:016x} --> {}",
-                    self.regs.pc,
-                    &instr.display_with_symbols(&self.debug_symbols)
-                );
-                self.instr_history.push(format!("{:010x} ==> {}", self.regs.pc, instr.display_with_symbols(&self.debug_symbols)));
-                self.stack_frame = {
-                    let bp = self.regs.bp - self.regs.bp % 8;
-                    let sp = self.regs.sp - self.regs.sp % 8;
-                    let mut out = Vec::new();
-                    for adr in (sp..=bp).rev().step_by(8) {
-                        out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).as_integer().unwrap()));
-                    }
-                    out
-                };
-                Ok(MachineState::Continue)
-            }
-            Err(e) => Err(e)
         }
     }
 

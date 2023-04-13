@@ -78,8 +78,17 @@ fn build_asm(paths: Vec<PathBuf>, mut out_path: PathBuf) -> Result<()> {
     log::info!("Assembling {}.", out_path.as_path().to_string_lossy());
     let program = assembler.assemble()?;
     out_path.set_extension("k4s");
-    let mut file = File::create(out_path)?;
+    let mut file = File::create(&out_path)?;
     file.write_all(&program)?;
+    let mut kept_lines = Vec::new();
+    for kept_block in assembler.kept_blocks.iter() {
+        for line in kept_block.lines.iter() {
+            kept_lines.push(line.asm.display(&assembler.symbols));
+        }
+    }
+    let mut file = File::create(format!("{}.kept_lines.k4sm", out_path.display()))?;
+
+    write!(&mut file, "{}", kept_lines.join("\n"))?;
     Ok(())
 }
 

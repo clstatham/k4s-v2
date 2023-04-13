@@ -9,11 +9,11 @@ use nom::{
     sequence::{preceded, terminated, tuple},
     IResult,
 };
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
-    contexts::asm::AssemblyContext, Data, Instr, InstrSig, InstrSize, Label, Linkage, Opcode,
-    Primitive, Register, Token,
+    contexts::asm::{AssemblyContext, Header},
+    Data, Instr, InstrSig, InstrSize, Label, Linkage, Opcode, Primitive, Register, Token,
 };
 
 use super::machine::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
@@ -161,6 +161,25 @@ pub fn header(i: &str) -> IResult<&str, &str> {
     )))(i)
 }
 
+pub fn header_entry(i: &str) -> IResult<&str, Header> {
+    map(
+        tuple((tag("!ent"), space1, label, space1, tag("@"), space1, |i| {
+            hexadecimal(InstrSize::I64, i)
+        })),
+        |(_, _, lab, _, _, _, adr)| {
+            if let Token::Label(lab) = lab {
+                if let Token::I64(adr) = adr {
+                    Header::Entry(lab, adr)
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+        },
+    )(i)
+}
+
 pub fn label(i: &str) -> IResult<&str, Token> {
     map(
         tuple((
@@ -197,9 +216,13 @@ pub fn data_tag(i: &str) -> IResult<&str, Token> {
             ))),
         )),
         |(_, label)| {
-            Token::Label(Label {
-                name: label.join(""),
-                linkage: Linkage::NeedsLinking,
+            Token::Data(Data {
+                label: Label {
+                    name: label.join(""),
+                    linkage: Linkage::NeedsLinking,
+                },
+                align: 1,
+                data: Vec::new(),
             })
         },
     )(i)
@@ -208,23 +231,23 @@ pub fn data_tag(i: &str) -> IResult<&str, Token> {
 pub fn lab_offset_const(i: &str) -> IResult<&str, (Label, Token)> {
     map(
         tuple((
-            label,
+            data_tag,
             space1,
             tag("("),
             opt(tag("-")),
             |i| decimal(InstrSize::I64, i),
             tag("+"),
-            label,
+            data_tag,
             tag(")"),
         )),
         |(name, _, _, neg, off, _, lab, _)| {
             if let Token::I64(off) = off {
-                if let Token::Label(lab) = lab {
-                    if let Token::Label(name) = name {
+                if let Token::Data(data) = lab {
+                    if let Token::Data(name) = name {
                         if neg.is_some() {
-                            (name, Token::LabelOffset(-(off as i64), lab))
+                            (name.label, Token::LabelOffset(-(off as i64), data.label))
                         } else {
-                            (name, Token::LabelOffset(off as i64, lab))
+                            (name.label, Token::LabelOffset(off as i64, data.label))
                         }
                     } else {
                         unreachable!()
@@ -427,78 +450,80 @@ pub fn size(asm: &str) -> IResult<&str, InstrSize> {
 }
 
 impl Token {
-    pub fn assemble(&mut self, ctx: &mut AssemblyContext) {
+    pub fn assemble(
+        &mut self,
+        linked_refs: &FxHashMap<String, u64>,
+        pc: u64,
+        line: &mut Vec<u8>,
+    ) -> Option<(Label, u64)> {
         match self {
-            Token::I8(val) => ctx.push_program_bytes(&[LITERAL, *val]),
+            Token::I8(val) => line.extend_from_slice(&[LITERAL, *val]),
             Token::I16(val) => {
-                ctx.push_program_bytes(&[LITERAL]);
-                ctx.push_program_bytes(&val.to_bytes());
+                line.extend_from_slice(&[LITERAL]);
+                line.extend_from_slice(&val.to_bytes());
             }
             Token::I32(val) => {
-                ctx.push_program_bytes(&[LITERAL]);
-                ctx.push_program_bytes(&val.to_bytes());
+                line.extend_from_slice(&[LITERAL]);
+                line.extend_from_slice(&val.to_bytes());
             }
             Token::I64(val) => {
-                ctx.push_program_bytes(&[LITERAL]);
-                ctx.push_program_bytes(&val.to_bytes());
+                line.extend_from_slice(&[LITERAL]);
+                line.extend_from_slice(&val.to_bytes());
             }
             Token::I128(val) => {
-                ctx.push_program_bytes(&[LITERAL]);
-                ctx.push_program_bytes(&val.to_bytes());
+                line.extend_from_slice(&[LITERAL]);
+                line.extend_from_slice(&val.to_bytes());
             }
             Token::F32(val) => {
-                ctx.push_program_bytes(&[LITERAL]);
-                ctx.push_program_bytes(&val.to_bytes());
+                line.extend_from_slice(&[LITERAL]);
+                line.extend_from_slice(&val.to_bytes());
             }
             Token::F64(val) => {
-                ctx.push_program_bytes(&[LITERAL]);
-                ctx.push_program_bytes(&val.to_bytes());
+                line.extend_from_slice(&[LITERAL]);
+                line.extend_from_slice(&val.to_bytes());
             }
             Token::Register(reg) => {
-                ctx.push_program_bytes(&[reg.mc_repr()]);
+                line.extend_from_slice(&[reg.mc_repr()]);
             }
             Token::RegOffset(off, reg) => {
-                ctx.push_program_bytes(&[REGISTER_OFFSET]);
-                ctx.push_program_bytes(&(*off as u64).to_bytes());
-                ctx.push_program_bytes(&[reg.mc_repr()]);
+                line.extend_from_slice(&[REGISTER_OFFSET]);
+                line.extend_from_slice(&(*off as u64).to_bytes());
+                line.extend_from_slice(&[reg.mc_repr()]);
             }
             Token::LabelOffset(off, lab) => {
-                if let Some(linked_location) = ctx.linked_refs.get(lab) {
-                    let offset_linked_location = (*linked_location as i64 + *off) as u64;
-                    lab.linkage = Linkage::Linked(*linked_location);
-                    ctx.push_program_bytes(&[LITERAL]);
-                    ctx.push_program_bytes(&offset_linked_location.to_bytes());
-                } else {
-                    ctx.push_program_bytes(&[LITERAL]);
-                    ctx.unlinked_offset_refs
-                        .entry((*off, lab.to_owned()))
-                        .or_insert(FxHashSet::default())
-                        .insert(ctx.pc);
-                    ctx.push_program_bytes(&[0; 8]);
-                }
+                line.extend_from_slice(&[LITERAL]);
+                // ctx.unlinked_offset_refs
+                //     .entry((*off, lab.to_owned()))
+                //     .or_insert(FxHashSet::default())
+                //     .insert(ctx.pc);
+                line.extend_from_slice(&[0; 8]);
+                return Some((lab.to_owned(), pc + 1));
             }
             Token::Label(lab) => {
-                if let Some(linked_location) = ctx.linked_refs.get(lab) {
-                    let linked_location = *linked_location;
-                    lab.linkage = Linkage::Linked(linked_location);
-                    ctx.push_program_bytes(&[LITERAL]);
-                    ctx.push_program_bytes(&linked_location.to_bytes());
-                } else {
-                    ctx.push_program_bytes(&[LITERAL]);
-                    ctx.unlinked_refs
-                        .entry(lab.to_owned())
-                        .or_insert(FxHashSet::default())
-                        .insert(ctx.pc);
-                    ctx.push_program_bytes(&[0; 8])
-                }
+                line.extend_from_slice(&[LITERAL]);
+                // ctx.unlinked_refs
+                //     .entry(lab.to_owned())
+                //     .or_insert(FxHashSet::default())
+                //     .insert(ctx.pc);
+                line.extend_from_slice(&[0; 8]);
+                return Some((lab.to_owned(), pc + 1));
             }
             Token::Addr(adr) => {
-                ctx.push_program_bytes(&[ADDRESS]);
-                adr.assemble(ctx);
+                line.extend_from_slice(&[ADDRESS]);
+                adr.assemble(linked_refs, pc, line);
             }
             Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
-            _ => todo!(),
+            Token::Data(data) => {
+                line.extend_from_slice(&[LITERAL]);
+                // ctx.unlinked_refs
+                //     .entry(data.label.to_owned())
+                //     .or_insert(FxHashSet::default())
+                //     .insert(ctx.pc);
+                line.extend_from_slice(&[0; 8]);
+                return Some((data.label.to_owned(), pc + 1));
+            }
         }
+        None
     }
 }
 
@@ -537,20 +562,34 @@ impl Instr {
         }
     }
 
-    pub fn assemble(&mut self, ctx: &mut AssemblyContext) -> Result<()> {
+    pub fn assemble(
+        &mut self,
+        linked_refs: &FxHashMap<String, u64>,
+        mut pc: u64,
+        line: &mut Vec<u8>,
+    ) -> Result<(usize, Vec<(Label, u64)>)> {
         let opcode = self.opcode.mc_repr();
+        let start = pc;
         let size = self.size.mc_repr();
-        let start = ctx.pc;
-        ctx.push_program_bytes(&[opcode, size]);
+        line.extend_from_slice(&[opcode, size]);
+        pc += 2;
+        let mut refs = Vec::new();
         if let Some(ref mut arg) = self.arg0 {
-            arg.assemble(ctx);
+            if let Some(r) = arg.assemble(linked_refs, pc, line) {
+                refs.push(r);
+            }
+            pc += arg.mc_size_in_bytes() as u64;
         }
         if let Some(ref mut arg) = self.arg1 {
-            arg.assemble(ctx);
+            if let Some(r) = arg.assemble(linked_refs, pc, line) {
+                refs.push(r);
+                // pc += 9;
+            }
+            pc += arg.mc_size_in_bytes() as u64;
         }
-        let size = ctx.pc - start;
+        let size = pc - start;
         assert_eq!(size as usize, self.mc_size_in_bytes(), "{:?}", self);
 
-        Ok(())
+        Ok((self.mc_size_in_bytes(), refs))
     }
 }

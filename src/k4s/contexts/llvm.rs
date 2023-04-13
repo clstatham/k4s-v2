@@ -138,6 +138,7 @@ impl LlvmContext {
                     .expect("todo: non const globals"),
                 global.name.to_owned(),
                 &types,
+                &self.globals,
             );
 
             self.globals.insert(global.name.to_owned(), ssa);
@@ -247,10 +248,9 @@ impl LlvmContext {
                     .build();
                 param_pushes.push(expr);
             }
-            // defer the argument pushes until we know the size of our stack frame
-            // (will be added to prologue at end of phase 2)
-            ctx.body.push((
-                format!("{}_push_params", ctx.name.to_owned().strip_prefix()).into(),
+            ctx.prologue.push((
+                ctx.gen_name(),
+                // format!("{}_push_params", ctx.name.to_owned().strip_prefix()).into(),
                 param_pushes,
             ));
 
@@ -260,15 +260,17 @@ impl LlvmContext {
                 linkage: Linkage::NeedsLinking,
             });
 
+            let mut bb_names = Vec::new();
             for bb in func.basic_blocks.iter() {
                 let mut exprs = Vec::new();
                 log::trace!("--> Entering basic block {}.", bb.name);
                 let bb_name: Name =
                     format!("{}_{}", func_name.strip_prefix(), bb.name.strip_prefix()).into();
+                bb_names.push(bb_name.to_owned());
                 for instr in bb.instrs.iter() {
                     log::trace!("-->     {}", instr);
                     exprs.push(Expr::builder().push_comment(&format!("{}", instr)).build());
-                    exprs.push(Expr::parse(instr, ctx, &types));
+                    exprs.push(Expr::parse(instr, ctx, &types, &self.globals));
                 }
 
                 exprs.push(
@@ -293,7 +295,7 @@ impl LlvmContext {
                     Terminator::Ret(ret) => {
                         let mut ret_expr = Expr::new();
                         if let Some(ret_op) = &ret.return_operand {
-                            let ret_ssa = Ssa::parse_operand(ret_op, ctx, &types);
+                            let ret_ssa = Ssa::parse_operand(ret_op, ctx, &types, &self.globals);
                             ret_expr.push_instr(Instr::new(
                                 Opcode::Mov,
                                 ret_ssa.instr_size(&types),
@@ -311,7 +313,7 @@ impl LlvmContext {
                         exprs.push(ret_expr);
                     }
                     Terminator::CondBr(br) => {
-                        let cond = Ssa::parse_operand(&br.condition, ctx, &types);
+                        let cond = Ssa::parse_operand(&br.condition, ctx, &types, &self.globals);
                         let true_dest = format!(
                             "{}_{}",
                             func_name.strip_prefix(),
@@ -365,10 +367,11 @@ impl LlvmContext {
                         exprs.push(expr);
                     }
                     Terminator::Switch(switch) => {
-                        let op = Ssa::parse_operand(&switch.operand, ctx, &types);
+                        let op = Ssa::parse_operand(&switch.operand, ctx, &types, &self.globals);
                         let mut expr = Expr::new();
                         for (case, dest) in switch.dests.iter() {
-                            let case = Ssa::parse_const(case, ctx.gen_name(), &types);
+                            let case =
+                                Ssa::parse_const(case, ctx.gen_name(), &types, &self.globals);
                             let dest =
                                 format!("{}_{}", func_name.strip_prefix(), dest.strip_prefix());
 
@@ -424,8 +427,24 @@ impl LlvmContext {
                 ))
                 .build();
             ctx.prologue.push((
-                format!("{}_push_stack", func_name.strip_prefix()).into(),
+                ctx.gen_name(),
+                // format!("{}_push_stack", func_name.strip_prefix()).into(),
                 vec![prologue_push_stack],
+            ));
+            let prologue_jmp_start = Expr::builder()
+                .push_instr(Instr::new(
+                    Opcode::Jmp,
+                    InstrSize::I64,
+                    Some(Token::Label(Label::new_unlinked(
+                        bb_names[0].strip_prefix(),
+                    ))),
+                    None,
+                ))
+                .build();
+            ctx.prologue.push((
+                ctx.gen_name(),
+                // format!("{}_push_stack", func_name.strip_prefix()).into(),
+                vec![prologue_jmp_start],
             ));
             ctx.epilogue.push((ret_label.into(), vec![epilogue]));
         }
@@ -436,13 +455,16 @@ impl LlvmContext {
         // globals
         for (global_name, global) in self.globals.iter() {
             if let Some(agg) = global.agg_const() {
-                Self::dump_agg(&mut out, agg, global_name.to_owned(), &types);
+                Self::dump_agg(&mut out, agg, global_name.to_owned(), &types, &self.globals);
             }
         }
 
         for (_func_name, func) in self.functions.iter() {
             for (block_name, block) in func.prologue.iter() {
-                writeln!(out, "{}", Label::new_unlinked(block_name.strip_prefix()))?;
+                if let Name::Name(name) = block_name {
+                    writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
+                }
+
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
@@ -456,7 +478,9 @@ impl LlvmContext {
                 }
             }
             for (block_name, block) in func.body.iter() {
-                writeln!(out, "{}", Label::new_unlinked(block_name.strip_prefix()))?;
+                if let Name::Name(name) = block_name {
+                    writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
+                }
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
@@ -470,7 +494,9 @@ impl LlvmContext {
                 }
             }
             for (block_name, block) in func.epilogue.iter() {
-                writeln!(out, "{}", Label::new_unlinked(block_name.strip_prefix()))?;
+                if let Name::Name(name) = block_name {
+                    writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
+                }
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
@@ -489,7 +515,13 @@ impl LlvmContext {
         Ok(out)
     }
 
-    fn dump_agg(out: &mut String, agg: ConstantRef, agg_name: Name, types: &Types) {
+    fn dump_agg(
+        out: &mut String,
+        agg: ConstantRef,
+        agg_name: Name,
+        types: &Types,
+        globals: &FxHashMap<Name, Ssa>,
+    ) {
         if let Constant::Struct {
             name: _struc_name,
             values,
@@ -497,12 +529,12 @@ impl LlvmContext {
         } = agg.as_ref()
         {
             // need to insert each element as a data tag with label pointers to their beginnings
-            writeln!(out, "{}", Label::new_unlinked(agg_name.strip_prefix())).unwrap();
+            writeln!(out, "@{} align1 \"\"", agg_name.strip_prefix()).unwrap();
             for (i, elem) in values.iter().enumerate() {
-                let elem_name = format!("{}_elem{}", agg_name.strip_prefix(), i);
-                let elem = Ssa::parse_const(elem, elem_name.to_owned().into(), types);
+                let elem_name = format!("@{}_elem{}", agg_name.strip_prefix(), i);
+                let elem = Ssa::parse_const(elem, elem_name.to_owned().into(), types, globals);
                 if let Some(agg2) = elem.agg_const() {
-                    Self::dump_agg(out, agg2, elem_name.into(), types);
+                    Self::dump_agg(out, agg2, elem_name.into(), types, globals);
                 } else if let Some(int) = elem.storage().as_integer::<u128>() {
                     let align = match elem.storage() {
                         Token::I8(_) => 1,
@@ -512,22 +544,21 @@ impl LlvmContext {
                         Token::I128(_) => 16,
                         _ => unreachable!(),
                     };
-                    writeln!(out, "@{} align{} ${}", elem_name, align, int).unwrap();
+                    writeln!(out, "{} align{} ${}", elem_name, align, int).unwrap();
                 } else {
                     match elem.storage() {
                         Token::Data(data) => {
-                            write!(out, "@{} align1 \"", elem_name).unwrap();
+                            write!(out, "{} align1 \"", elem_name).unwrap();
                             for byte in data.data.iter() {
                                 write!(out, "\\x{:02x}", *byte).unwrap();
                             }
                             writeln!(out, "\"").unwrap();
                         }
                         Token::LabelOffset(off, lab) => {
-                            writeln!(out, "{} ({}+{})", Label::new_unlinked(elem_name), *off, lab)
-                                .unwrap();
+                            writeln!(out, "{} ({}+@{})", elem_name, *off, lab.name).unwrap();
                         }
                         Token::Label(_lab) => {
-                            writeln!(out, "{}", Label::new_unlinked(elem_name)).unwrap();
+                            writeln!(out, "{} align1 \"\"", elem_name).unwrap();
                         }
                         _ => todo!("{:?}", elem.storage()),
                     }
