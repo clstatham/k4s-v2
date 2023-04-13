@@ -323,7 +323,7 @@ impl Display for Token {
             Self::Label(lab) => write!(f, "{}", lab),
             Self::Data(dat) => write!(f, "@{}", dat.label.name),
             Self::LabelOffset(off, lab) => {
-                write!(f, "({}+{})", *off, lab)
+                write!(f, "({}+@{})", *off, lab.name)
             }
         }
     }
@@ -780,6 +780,19 @@ impl Display for InstrSize {
 }
 
 impl InstrSize {
+    pub const fn in_bytes(self) -> usize {
+        match self {
+            Self::Unsized => 0,
+            Self::I8 => 1,
+            Self::I16 => 2,
+            Self::I32 => 4,
+            Self::I64 => 8,
+            Self::I128 => 16,
+            Self::F32 => 4,
+            Self::F64 => 8,
+        }
+    }
+
     pub const fn from_integer_bits(bits: u32) -> Option<Self> {
         match bits {
             1 => Some(Self::I8),

@@ -1,6 +1,7 @@
 use std::{
+    fmt::Write,
     fs::File,
-    io::{Read, Write},
+    io::{Read, Write as IoWrite},
     path::PathBuf,
 };
 
@@ -73,6 +74,7 @@ fn build_asm(paths: Vec<PathBuf>, mut out_path: PathBuf) -> Result<()> {
     for path in paths {
         let mut file = File::open(path)?;
         file.read_to_string(&mut asm)?;
+        writeln!(&mut asm)?;
     }
     let mut assembler = AssemblyContext::new(asm);
     log::info!("Assembling {}.", out_path.as_path().to_string_lossy());

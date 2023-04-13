@@ -1,6 +1,6 @@
 [build]
 target = ".cargo/k4s-unknown-none.json"
-rustflags = "--emit=llvm-bc,llvm-ir"
+rustflags = "--emit=llvm-bc,llvm-ir -Clto=no"
 
 [unstable]
 build-std = ["core", "compiler_builtins"]

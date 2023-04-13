@@ -1,14 +1,16 @@
 use std::rc::Rc;
 
 use llvm_ir::{
+    function::CallingConvention,
     types::{NamedStructDef, Typed, Types},
     ConstantRef, FPPredicate, Instruction, IntPredicate, Name, Operand, Type, TypeRef,
 };
 use rustc_hash::FxHashMap;
 
 use crate::k4s::{
-    contexts::llvm::FunctionContext, parsers::llvm::consteval::NameExt, Instr, InstrSize, Label,
-    Linkage, Opcode, Register, Token,
+    contexts::llvm::{pad_for_struct, FunctionContext},
+    parsers::llvm::consteval::NameExt,
+    Instr, InstrSize, Label, Linkage, Opcode, Register, Token,
 };
 
 use self::consteval::TypeExt;
@@ -288,7 +290,7 @@ impl Expr {
                     ))
                     .push_instr(Instr::new(
                         Opcode::Mov,
-                        InstrSize::I64,
+                        src.instr_size(types),
                         Some(Token::Addr(Token::Register(tmp).into())),
                         Some(src.storage().to_owned()),
                     ))
@@ -318,13 +320,7 @@ impl Expr {
             Instruction::Call(instr) => {
                 let func = if instr.function.is_right() {
                     let func = instr.function.as_ref().unwrap_right();
-                    let func_ssa = Ssa::parse_operand(func, ctx, types, globals);
-                    if let Operand::LocalOperand { .. } = func {
-                        dbg!("Local Operand", func.get_type(types), func_ssa.storage());
-                    }
-                    // dbg!("Constant Operand", func.get_type(types), func_ssa.storage());
-                    // }
-                    func_ssa
+                    Ssa::parse_operand(func, ctx, types, globals)
                 } else {
                     let func_name = ctx.name().to_owned().strip_prefix();
                     let asm = instr.function.as_ref().unwrap_left();
@@ -343,9 +339,13 @@ impl Expr {
                     func
                 };
                 let mut args = Vec::new();
-                for (arg, _attrs) in instr.arguments.iter() {
+
+                for (arg, attrs) in instr.arguments.iter() {
                     if let Operand::MetadataOperand = arg {
                     } else {
+                        if !attrs.is_empty() {
+                            dbg!(attrs);
+                        }
                         args.push(Ssa::parse_operand(arg, ctx, types, globals));
                     }
                 }
@@ -694,6 +694,10 @@ impl Expr {
                 let agg = Ssa::parse_operand(&instr.aggregate, ctx, types, globals);
                 let element = Ssa::parse_operand(&instr.element, ctx, types, globals);
                 let dest = ctx.get_or_push(&instr.dest, &agg.ty(), types);
+                // dbg!(agg.storage(), element.storage());
+                // if let Token::Unknown = agg.storage() {
+                //     return Expr::new();
+                // }
                 let mut current_ty = dest.ty().as_ref().to_owned();
                 let mut offset: u64 = 0;
                 for idx in instr.indices.iter() {
@@ -710,12 +714,25 @@ impl Expr {
                     match current_ty {
                         Type::StructType {
                             element_types,
-                            is_packed: _,
+                            is_packed,
                         } => {
-                            offset += element_types[..idx]
-                                .iter()
-                                .map(|elem| elem.total_size_in_bytes(types) as u64)
-                                .sum::<u64>();
+                            if is_packed {
+                                offset += element_types[..idx]
+                                    .iter()
+                                    .map(|elem| elem.total_size_in_bytes(types) as u64)
+                                    .sum::<u64>();
+                            } else {
+                                let mut total = 0;
+                                let mut it = element_types[..idx].iter().peekable();
+                                while let Some(elem) = it.next() {
+                                    total += elem.as_ref().total_size_in_bytes(types);
+                                    if let Some(next_elem) = it.peek() {
+                                        total += pad_for_struct(total, next_elem, types);
+                                    }
+                                }
+                                offset += total as u64;
+                            }
+
                             current_ty = element_types[idx].as_ref().to_owned();
                         }
                         Type::ArrayType { element_type, .. }
@@ -780,12 +797,24 @@ impl Expr {
                     match current_ty {
                         Type::StructType {
                             element_types,
-                            is_packed: _,
+                            is_packed,
                         } => {
-                            offset += element_types[..idx]
-                                .iter()
-                                .map(|elem| elem.total_size_in_bytes(types) as u64)
-                                .sum::<u64>();
+                            if is_packed {
+                                offset += element_types[..idx]
+                                    .iter()
+                                    .map(|elem| elem.total_size_in_bytes(types) as u64)
+                                    .sum::<u64>();
+                            } else {
+                                let mut total = 0;
+                                let mut it = element_types[..idx].iter().peekable();
+                                while let Some(elem) = it.next() {
+                                    total += elem.as_ref().total_size_in_bytes(types);
+                                    if let Some(next_elem) = it.peek() {
+                                        total += pad_for_struct(total, next_elem, types);
+                                    }
+                                }
+                                offset += total as u64;
+                            }
                             current_ty = element_types[idx].as_ref().to_owned();
                         }
                         Type::ArrayType { element_type, .. }
@@ -980,11 +1009,12 @@ impl Expr {
     ) -> (Self, Ssa) {
         let mut expr = Expr::new();
 
-        let tmp_dest = ctx.any_register().unwrap();
+        let tmp_dest_name = ctx.gen_name();
+        let tmp_dest = ctx.push(tmp_dest_name, addr.ty(), types);
         expr.push_instr(Instr::new(
             Opcode::Mov,
             InstrSize::I64,
-            Some(Token::Register(tmp_dest)),
+            Some(tmp_dest.storage().to_owned()),
             Some(addr.storage().to_owned()),
         ));
 
@@ -1000,18 +1030,30 @@ impl Expr {
             match current_type.clone() {
                 Type::StructType {
                     ref element_types,
-                    is_packed: _,
+                    is_packed,
                 } => {
                     let idx = idx.storage().as_integer::<u64>().unwrap() as usize;
-                    let offset: usize = element_types[..idx]
-                        .iter()
-                        .map(|ty| ty.total_size_in_bytes(types))
-                        .sum();
+                    let offset = if is_packed {
+                        element_types[..idx]
+                            .iter()
+                            .map(|elem| elem.total_size_in_bytes(types) as u64)
+                            .sum::<u64>()
+                    } else {
+                        let mut total = 0;
+                        let mut it = element_types[..idx].iter().peekable();
+                        while let Some(elem) = it.next() {
+                            total += elem.as_ref().total_size_in_bytes(types);
+                            if let Some(next_elem) = it.peek() {
+                                total += pad_for_struct(total, next_elem, types);
+                            }
+                        }
+                        total as u64
+                    };
                     if offset > 0 {
                         expr.push_instr(Instr::new(
                             Opcode::Add,
                             InstrSize::I64,
-                            Some(Token::Register(tmp_dest)),
+                            Some(tmp_dest.storage().to_owned()),
                             Some(Token::I64(offset as u64)),
                         ));
                     }
@@ -1030,7 +1072,7 @@ impl Expr {
                             expr.push_instr(Instr::new(
                                 Opcode::Add,
                                 InstrSize::I64,
-                                Some(Token::Register(tmp_dest)),
+                                Some(tmp_dest.storage().to_owned()),
                                 Some(Token::I64((size as i64 * idx as i64) as u64)),
                             ));
                         }
@@ -1051,7 +1093,7 @@ impl Expr {
                         expr.push_instr(Instr::new(
                             Opcode::Add,
                             InstrSize::I64,
-                            Some(Token::Register(tmp_dest)),
+                            Some(tmp_dest.storage().to_owned()),
                             Some(Token::Register(tmp)),
                         ));
                         ctx.take_back(tmp);
@@ -1060,11 +1102,6 @@ impl Expr {
                 ty => {
                     todo!("{:?}", ty)
                 }
-            }
-        }
-        if let Type::PointerType { pointee_type, .. } = current_type.to_owned() {
-            if let Type::FuncType { .. } = pointee_type.as_ref() {
-                dbg!("GEP to a function");
             }
         }
 
@@ -1077,13 +1114,13 @@ impl Expr {
             .get_type(types),
             types,
         );
+
         expr.push_instr(Instr::new(
             Opcode::Mov,
             InstrSize::I64,
             Some(dest.storage().to_owned()),
-            Some(Token::Register(tmp_dest)),
+            Some(tmp_dest.storage().to_owned()),
         ));
-        ctx.take_back(tmp_dest);
 
         (expr, dest)
     }

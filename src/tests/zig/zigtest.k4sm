@@ -1,0 +1,24 @@
+%addnums
+    push i64 bp
+    mov i64 bp sp
+    mov i32 [-8+bp] rg
+    mov i32 [-16+bp] rh
+    sub i64 sp $24
+    jmp i64 %addnums_Entry
+%addnums_Entry
+;call @llvm.dbg.value(<metadata>, <metadata>, <metadata>) (with debugloc)
+    call i64 %llvm_dbg_value
+;call @llvm.dbg.value(<metadata>, <metadata>, <metadata>) (with debugloc)
+    call i64 %llvm_dbg_value
+;%2 = add i32 %1, i32 %0 (with debugloc)
+    mov i32 [-24+bp] [-16+bp]
+    add i32 [-24+bp] [-8+bp]
+    mov i64 rb %addnums_Entry
+;ret i32 %2 (with debugloc)
+    mov i32 ra [-24+bp]
+    jmp i64 %addnums_ret
+%addnums_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+

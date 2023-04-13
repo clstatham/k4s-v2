@@ -508,7 +508,7 @@ impl MachineContext {
         match instr.opcode {
             Opcode::Hlt => return Ok(MachineState::Halt),
             Opcode::Nop => {}
-            Opcode::Und => panic!("Program entered explicit undefined behavior"),
+            Opcode::Und => return Err(Error::msg("Program entered explicit undefined behavior")),
             Opcode::Mov => {
                 self.assign_lvalue_with(arg0?, instr, |_| arg1)?;
             }

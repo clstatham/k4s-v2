@@ -5,7 +5,10 @@ use std::{
 };
 
 use anyhow::Result;
-use llvm_ir::{types::Types, Constant, ConstantRef, Module, Name, Terminator, TypeRef};
+use llvm_ir::{
+    types::{NamedStructDef, Typed, Types},
+    Constant, ConstantRef, Module, Name, Terminator, TypeRef,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
@@ -59,7 +62,9 @@ impl FunctionContext {
 
     pub fn push(&mut self, name: Name, ty: TypeRef, types: &Types) -> Ssa {
         self.stack_offset -= ty.as_ref().total_size_in_bytes(types) as i64;
-        self.stack_offset -= 8 - self.stack_offset.abs() % 8;
+        let pad = (8 - (-self.stack_offset % 8)) % 8;
+        self.stack_offset -= pad;
+        // self.stack_offset -= 8; // - self.stack_offset.abs() % 8;
         let ssa = Ssa::new(
             name.to_owned(),
             ty,
@@ -525,16 +530,18 @@ impl LlvmContext {
         if let Constant::Struct {
             name: _struc_name,
             values,
-            is_packed: _,
+            is_packed,
         } = agg.as_ref()
         {
             // need to insert each element as a data tag with label pointers to their beginnings
             writeln!(out, "@{} align0 resb 0", agg_name.strip_prefix()).unwrap();
-            for (i, elem) in values.iter().enumerate() {
+            let mut it = values.iter().enumerate().peekable();
+            let mut total = 0;
+            while let Some((i, elem)) = it.next() {
                 let elem_name = format!("@{}_elem{}", agg_name.strip_prefix(), i);
                 let elem = Ssa::parse_const(elem, elem_name.to_owned().into(), types, globals);
                 if let Some(agg2) = elem.agg_const() {
-                    Self::dump_agg(out, agg2, elem_name.into(), types, globals);
+                    Self::dump_agg(out, agg2, elem_name.to_owned().into(), types, globals);
                 } else if let Some(int) = elem.storage().as_integer::<u128>() {
                     let align = match elem.storage() {
                         Token::I8(_) => 1,
@@ -563,9 +570,68 @@ impl LlvmContext {
                         _ => todo!("{:?}", elem.storage()),
                     }
                 }
+
+                total += elem.ty().total_size_in_bytes(types);
+
+                if !is_packed {
+                    if let Some((_, next_elem)) = it.peek() {
+                        let pad = pad_for_struct(total, &next_elem.get_type(types), types);
+                        if pad > 0 {
+                            total += pad;
+                            writeln!(out, "{}_pad align0 resb {}", elem_name, pad).unwrap();
+                        }
+                    }
+                }
             }
+        } else if let Constant::AggregateZero(agg_zero) = agg.as_ref() {
+            writeln!(
+                out,
+                "@{} align0 resb {}",
+                agg_name.strip_prefix(),
+                agg_zero.total_size_in_bytes(types)
+            )
+            .unwrap();
         } else {
             todo!("{:?}", agg.as_ref())
         }
+    }
+}
+
+pub fn pad_for_struct(total: usize, next_elem: &TypeRef, types: &Types) -> usize {
+    let next_align = match next_elem.as_ref() {
+        llvm_ir::Type::VoidType => 0,
+        llvm_ir::Type::IntegerType { bits } => (*bits / 8).max(1) as usize,
+        llvm_ir::Type::PointerType { .. } => 8,
+        llvm_ir::Type::FPType(prec) => match prec {
+            llvm_ir::types::FPType::Double => 8,
+            llvm_ir::types::FPType::Single => 4,
+            _ => todo!("{:?}", prec),
+        },
+        llvm_ir::Type::FuncType { .. } => 8,
+        llvm_ir::Type::VectorType { element_type, .. } => element_type.instr_size(types).in_bytes(),
+        llvm_ir::Type::ArrayType { element_type, .. } => element_type.instr_size(types).in_bytes(),
+        llvm_ir::Type::StructType {
+            element_types,
+            is_packed: _,
+        } => element_types
+            .get(0)
+            .map(|ty| ty.instr_size(types).in_bytes())
+            .unwrap_or(0),
+        llvm_ir::Type::NamedStructType { name } => {
+            let struc = types.named_struct_def(name).unwrap();
+            if let NamedStructDef::Defined(ty) = struc {
+                pad_for_struct(total, ty, types)
+            } else {
+                todo!("opaque structs")
+            }
+        }
+        llvm_ir::Type::LabelType => 8,
+        t => todo!("{:?}", t),
+    };
+    if next_align > 0 {
+        (next_align - (total % next_align)) % next_align
+        // writeln!(out, "{}_pad align0 resb {}", elem_name, pad).unwrap();
+    } else {
+        0
     }
 }

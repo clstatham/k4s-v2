@@ -235,8 +235,8 @@ pub struct AssemblyContext {
     pub blocks: FxHashMap<String, AssembledBlock>,
     pub linked_refs: FxHashMap<String, u64>, // (label, addr found at)
     pub unlinked_refs: FxHashMap<String, FxHashSet<u64>>, // (label, addrs found at)
-    pub linked_offset_refs: FxHashMap<(i64, Label), u64>, // ((offset, label), addr found at)
-    pub unlinked_offset_refs: FxHashMap<(i64, Label), FxHashSet<u64>>, // ((offset, label), addrs found at)
+    pub linked_offset_refs: FxHashMap<(i64, String), u64>, // ((offset, label), addr found at)
+    pub unlinked_offset_refs: FxHashMap<(i64, String), FxHashSet<u64>>, // ((offset, label), addrs found at)
 
     pub entry_label: Option<Label>,
     pub used_labels: FxHashSet<usize>,
@@ -300,6 +300,7 @@ impl AssemblyContext {
         let mut in_function = false;
         let mut current_function = None;
         let mut data_lines = Vec::default();
+        let mut label_offset_const_lines = Vec::default();
         for (line_no, line) in self.input.clone().lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
@@ -350,6 +351,9 @@ impl AssemblyContext {
                 }
                 data_lines.push(parsed_line.to_owned());
                 // self.push_program_bytes(&data.data);
+            } else if let ParsedLine::LabelOffsetConst(ref mut name, off, ref lab) = parsed_line.asm
+            {
+                label_offset_const_lines.push(parsed_line.to_owned());
             } else if !junk.is_empty() && !junk.trim().starts_with(';') {
                 log::warn!("Ignoring junk after line {line_no}: {junk}");
             }
@@ -480,14 +484,23 @@ impl AssemblyContext {
                 self.push_program_bytes(&line.mc);
             }
         }
+        for label_offset_const in label_offset_const_lines {
+            if let ParsedLine::LabelOffsetConst(name, off, lab) = label_offset_const.asm {
+                if !self.linked_refs.contains_key(&name.name) {
+                    self.linked_refs.insert(name.name.to_owned(), self.pc);
+                    self.unlinked_offset_refs
+                        .entry((off, lab.name))
+                        .or_insert(FxHashSet::default())
+                        .insert(self.pc);
+                }
+            }
+        }
         for data_line in data_lines {
             if let ParsedLine::Data(data) = data_line.asm {
                 if !self.linked_refs.contains_key(&data.label.name) {
                     if data.align > 0 {
-                        self.push_program_bytes(&vec![
-                            0;
-                            data.align - self.pc as usize % data.align
-                        ]);
+                        let pad = (data.align - (self.pc as usize % data.align)) % data.align;
+                        self.push_program_bytes(&vec![0; pad]);
                     }
                     self.linked_refs
                         .insert(data.label.name.to_owned(), self.pc + 1);
@@ -506,6 +519,17 @@ impl AssemblyContext {
                     self.output[refr as usize - self.entry_point as usize
                         ..refr as usize - self.entry_point as usize + 8]
                         .copy_from_slice(&loc.to_bytes());
+                }
+            } else {
+                undefined_count += 1;
+            }
+        }
+        for ((off, lab), refs) in self.unlinked_offset_refs.iter_mut() {
+            if let Some(loc) = self.linked_refs.get(lab) {
+                for refr in refs.drain() {
+                    self.output[refr as usize - self.entry_point as usize
+                        ..refr as usize - self.entry_point as usize + 8]
+                        .copy_from_slice(&((*loc as i64 + off) as u64).to_bytes());
                 }
             } else {
                 undefined_count += 1;

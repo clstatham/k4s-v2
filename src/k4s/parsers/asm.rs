@@ -341,16 +341,16 @@ pub fn lab_offset(i: &str) -> IResult<&str, Token> {
             opt(tag("-")),
             |i| decimal(InstrSize::I64, i),
             tag("+"),
-            label,
+            data_tag,
             tag(")"),
         )),
         |(_, neg, off, _, lab, _)| {
             if let Token::I64(off) = off {
-                if let Token::Label(lab) = lab {
+                if let Token::Data(dat) = lab {
                     if neg.is_some() {
-                        Token::LabelOffset(-(off as i64), lab)
+                        Token::LabelOffset(-(off as i64), dat.label)
                     } else {
-                        Token::LabelOffset(off as i64, lab)
+                        Token::LabelOffset(off as i64, dat.label)
                     }
                 } else {
                     unreachable!()
@@ -486,7 +486,7 @@ impl Token {
                 line.extend_from_slice(&(*off as u64).to_bytes());
                 line.extend_from_slice(&[reg.mc_repr()]);
             }
-            Token::LabelOffset(off, lab) => {
+            Token::LabelOffset(_off, lab) => {
                 line.extend_from_slice(&[LITERAL]);
                 line.extend_from_slice(&[0; 8]);
                 return Some((lab.to_owned(), pc + 1));
@@ -498,7 +498,7 @@ impl Token {
             }
             Token::Addr(adr) => {
                 line.extend_from_slice(&[ADDRESS]);
-                adr.assemble(pc + 1, line);
+                return adr.assemble(pc + 1, line);
             }
             Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
             Token::Data(data) => {

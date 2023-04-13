@@ -1,0 +1,12 @@
+!ent %_start @ 0x1000
+
+%_start
+    mov i32 rg $42
+    mov i32 rh $69
+    call i64 %addnums
+    printi i32 ra
+    hlt
+    und
+
+%llvm_dbg_value
+    ret

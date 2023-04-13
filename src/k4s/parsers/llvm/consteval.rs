@@ -5,7 +5,7 @@ use llvm_ir::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::k4s::{Data, InstrSize, Label, Token};
+use crate::k4s::{contexts::llvm::pad_for_struct, Data, InstrSize, Label, Token};
 
 use super::Ssa;
 
@@ -56,7 +56,7 @@ impl Ssa {
             Constant::Undef(ty) => Self::new(
                 name,
                 ty.to_owned(),
-                Token::I64(0), // todo?
+                Token::Unknown, // todo?
                 None,
             ),
             Constant::Null(ty) => Self::new(name, ty.to_owned(), Token::I64(0), None),
@@ -102,23 +102,28 @@ impl Ssa {
                             })
                             .collect(),
                     }),
-                    _ => todo!(),
+                    _ => todo!("{:?}", element_type.as_ref()),
                 };
                 Self::new(name, ty, storage, None) // todo: set agg_const when doing arrays of non-u8's
             }
             Constant::AggregateZero(agg) => Self::new(
                 name.to_owned(),
-                ty,
+                agg.to_owned(),
                 Token::Data(Data {
                     label: Label::new_unlinked(name.strip_prefix()),
-                    align: 1,
+                    align: 0,
                     data: vec![0u8; agg.total_size_in_bytes(types)],
                 }),
-                None,
+                Some(con.to_owned()),
             ),
             Constant::BitCast(cast) => {
                 let op = Self::parse_const(&cast.operand, name.to_owned(), types, globals);
-                Self::new(name, cast.to_type.to_owned(), op.storage().to_owned(), None)
+                Self::new(
+                    name,
+                    cast.to_type.to_owned(),
+                    op.storage().to_owned(),
+                    op.agg_const(),
+                )
             }
             Constant::GetElementPtr(gep) => {
                 let addr = Self::parse_const(&gep.address, name.to_owned(), types, globals);
@@ -128,7 +133,7 @@ impl Ssa {
                     .map(|idx| Self::parse_const(idx, name.to_owned(), types, globals))
                     .collect::<Vec<_>>();
                 let mut current_type = addr.ty().as_ref().to_owned();
-                let mut total = 0;
+                let mut offset = 0;
                 for idx in indices.iter() {
                     let idx = idx.storage().as_integer::<u64>().unwrap();
                     if let Type::NamedStructType { name: struc_name } = current_type.clone() {
@@ -143,13 +148,25 @@ impl Ssa {
                     match current_type.clone() {
                         Type::StructType {
                             element_types,
-                            is_packed: _,
+                            is_packed,
                         } => {
                             if idx > 0 {
-                                total += element_types[..idx as usize]
-                                    .iter()
-                                    .map(|elem| elem.total_size_in_bytes(types) as u64)
-                                    .sum::<u64>();
+                                if is_packed {
+                                    offset += element_types[..idx as usize]
+                                        .iter()
+                                        .map(|elem| elem.total_size_in_bytes(types) as u64)
+                                        .sum::<u64>();
+                                } else {
+                                    let mut total = 0;
+                                    let mut it = element_types[..idx as usize].iter().peekable();
+                                    while let Some(elem) = it.next() {
+                                        total += elem.as_ref().total_size_in_bytes(types);
+                                        if let Some(next_elem) = it.peek() {
+                                            total += pad_for_struct(total, next_elem, types);
+                                        }
+                                    }
+                                    offset += total as u64;
+                                }
                             }
                             current_type = element_types[idx as usize].as_ref().to_owned();
                         }
@@ -161,7 +178,7 @@ impl Ssa {
                         | Type::VectorType { element_type, .. } => {
                             current_type = element_type.as_ref().to_owned();
                             if idx > 0 {
-                                total += current_type.total_size_in_bytes(types) as u64 * idx;
+                                offset += current_type.total_size_in_bytes(types) as u64 * idx;
                             }
                         }
                         t => todo!("{:?}", t),
@@ -175,6 +192,18 @@ impl Ssa {
                 } else {
                     unreachable!()
                 };
+                // if offset == 0 {
+                //     Self::new(
+                //         name,
+                //         Type::PointerType {
+                //             pointee_type: current_type.get_type(types),
+                //             addr_space: 0,
+                //         }
+                //         .get_type(types),
+                //         Token::Label(addr_label),
+                //         None,
+                //     )
+                // } else {
                 Self::new(
                     name,
                     Type::PointerType {
@@ -182,9 +211,10 @@ impl Ssa {
                         addr_space: 0,
                     }
                     .get_type(types),
-                    Token::LabelOffset(total as i64, addr_label),
+                    Token::LabelOffset(offset as i64, addr_label),
                     None,
                 )
+                // }
             }
             _ => todo!("{:?}", con),
         }
@@ -197,7 +227,8 @@ pub trait NameExt {
 
 impl NameExt for Name {
     fn strip_prefix(&self) -> String {
-        self.to_string().strip_prefix('%').unwrap().to_string()
+        let s = self.to_string().strip_prefix('%').unwrap().to_string();
+        s.strip_prefix('@').unwrap_or(&s).to_string()
     }
 }
 
@@ -230,13 +261,25 @@ impl TypeExt for Type {
             } => element_type.as_ref().total_size_in_bytes(types) * *num_elements,
             Type::StructType {
                 element_types,
-                is_packed: _,
+                is_packed,
             } => {
                 // assert!(*is_packed, "only packed structs are supported currently"); // todo: enforce this or implement struct padding
-                element_types
-                    .iter()
-                    .map(|ty| ty.as_ref().total_size_in_bytes(types))
-                    .sum()
+                if *is_packed {
+                    element_types
+                        .iter()
+                        .map(|ty| ty.as_ref().total_size_in_bytes(types))
+                        .sum()
+                } else {
+                    let mut total = 0;
+                    let mut it = element_types.iter().peekable();
+                    while let Some(elem) = it.next() {
+                        total += elem.as_ref().total_size_in_bytes(types);
+                        if let Some(next_elem) = it.peek() {
+                            total += pad_for_struct(total, next_elem, types);
+                        }
+                    }
+                    total
+                }
             }
             Type::NamedStructType { name } => {
                 let struc = types.named_struct_def(name).unwrap();
@@ -266,7 +309,14 @@ impl TypeExt for Type {
                     Type::IntegerType { bits: 48 } => InstrSize::I64,
                     Type::IntegerType { bits: 56 } => InstrSize::I64,
                     Type::IntegerType { bits: 96 } => InstrSize::I128,
-
+                    Type::NamedStructType { name } => {
+                        let struc = types.named_struct_def(name).unwrap();
+                        if let NamedStructDef::Defined(ty) = struc {
+                            ty.instr_size(types)
+                        } else {
+                            todo!("opaque structs")
+                        }
+                    }
                     ty => todo!("{:?}", ty),
                 })
         }

@@ -2,7 +2,7 @@
 #![no_main]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use core::fmt::Write;
+use core::fmt::{Display, Write};
 #[cfg(not(test))]
 use core::panic::PanicInfo;
 
@@ -22,7 +22,8 @@ extern "C" {
     pub fn hlt() -> !;
     pub(crate) fn printi_(rg: u64);
     pub(crate) fn printc_(rg: u8);
-    pub fn memcpy(dest: *mut u8, src: *const u8, n_bytes: u64);
+    pub fn llvm_memcpy_p0i8_p0i8_i64(dest: *mut u8, src: *const u8, n_bytes: u64);
+    pub fn printptrln_asm(s: *const u8, len: usize);
 }
 
 pub fn printi(val: u64) {
@@ -59,6 +60,10 @@ impl Write for PrintcWriter {
 
         Ok(())
     }
+
+    fn write_fmt(&mut self, args: core::fmt::Arguments<'_>) -> core::fmt::Result {
+        self.write_str(args.as_str().unwrap())
+    }
 }
 
 #[repr(C, packed)]
@@ -66,13 +71,32 @@ pub struct BootInfo {
     pub max_mem: u64,
 }
 
+#[repr(C, packed)]
+pub struct Foobar {
+    pub pad0: [u8; 3],
+    pub ptr: unsafe extern "C" fn(*const u8, usize),
+}
+
+unsafe impl Sync for Foobar {}
+
 #[no_mangle]
-pub extern "C" fn kernel_main(boot_info_addr: *const BootInfo) -> ! {
-    // printi(boot_info_addr as u64);
-    // let boot_info = unsafe { &*boot_info_addr };
-    // printi(boot_info.max_mem);
-    println("Hello from the kernel!");
-    writeln!(PrintcWriter, "Hello from writeln!").unwrap();
+pub fn kernel_main() -> ! {
+    // unsafe extern "C" fn f(s: *const u8, len: usize) {
+    //     printptrln_asm(s, len)
+    // }
+    // // let f = || println("Hello from a closure!");
+    // let mut f = Foobar {
+    //     pad0: [0; 3],
+    //     ptr: f,
+    // };
+    // let s = b"Hello from a function pointer!\0";
+    // f.pad0[2] = 0x69;
+    // // printc(f.pad0[2]);
+    // unsafe {
+    //     (f.ptr)(s.as_ptr(), s.len());
+    // }
+
+    PrintcWriter.write_str("Hello from writeln!").unwrap();
     // panic!();
     unsafe { hlt() }
 }

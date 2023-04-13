@@ -1,0 +1,6 @@
+/zig-cache
+/zig-out
+/src/zig-cache
+*.bc
+*.ll
+*.a
