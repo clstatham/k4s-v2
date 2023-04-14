@@ -1,5 +1,6 @@
 use std::{
     fmt::Write,
+    ops::{Deref, DerefMut},
     path::Path,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -19,12 +20,43 @@ use crate::k4s::{
     Instr, InstrSize, Label, Linkage, Opcode, Register, Token, GP_REGS,
 };
 
+pub struct Block {
+    pub name: Name,
+    pub code: Vec<Expr>,
+}
+
+impl Block {
+    pub fn new(name: Name) -> Self {
+        Self {
+            name,
+            code: Vec::new(),
+        }
+    }
+
+    pub fn from_code(name: Name, code: Vec<Expr>) -> Self {
+        Self { name, code }
+    }
+}
+
+impl Deref for Block {
+    type Target = Vec<Expr>;
+    fn deref(&self) -> &Self::Target {
+        &self.code
+    }
+}
+
+impl DerefMut for Block {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.code
+    }
+}
+
 pub struct FunctionContext {
     name: Name,
     next_id: AtomicUsize,
-    prologue: Vec<(Name, Vec<Expr>)>,
-    body: Vec<(Name, Vec<Expr>)>,
-    epilogue: Vec<(Name, Vec<Expr>)>,
+    prologue: Vec<Block>,
+    body: Vec<Block>,
+    epilogue: Vec<Block>,
     pool: FxHashMap<Name, Ssa>,
     used_regs: FxHashSet<Register>,
     stack_offset: i64, // usually negative
@@ -148,6 +180,16 @@ impl LlvmContext {
 
             self.globals.insert(global.name.to_owned().into(), ssa);
         }
+        for func in module.functions.iter() {
+            let ssa = Ssa::new(
+                func.name.to_owned().into(),
+                func.get_type(&types),
+                Token::Label(Label::new_unlinked(func.name.to_owned())),
+                None,
+            );
+
+            self.globals.insert(func.name.to_owned().into(), ssa);
+        }
 
         // phase 2: parse functions
         for func in module.functions.iter() {
@@ -219,8 +261,10 @@ impl LlvmContext {
                     Some(Token::Register(Register::Sp)),
                 ))
                 .build();
-            ctx.prologue
-                .push((func_name.to_owned(), vec![pop_args_expr, prologue]));
+            ctx.prologue.push(Block::from_code(
+                func_name.to_owned(),
+                vec![pop_args_expr, prologue],
+            ));
 
             let mut param_pushes = Vec::new();
 
@@ -253,7 +297,7 @@ impl LlvmContext {
                     .build();
                 param_pushes.push(expr);
             }
-            ctx.prologue.push((
+            ctx.prologue.push(Block::from_code(
                 ctx.gen_name(),
                 // format!("{}_push_params", ctx.name.to_owned().strip_prefix()).into(),
                 param_pushes,
@@ -267,14 +311,14 @@ impl LlvmContext {
 
             let mut bb_names = Vec::new();
             for bb in func.basic_blocks.iter() {
-                let mut exprs = Vec::new();
                 // log::trace!("--> Entering basic block {}.", bb.name);
                 let bb_name: Name =
                     format!("{}_{}", func_name.strip_prefix(), bb.name.strip_prefix()).into();
                 bb_names.push(bb_name.to_owned());
+                let mut exprs = Block::new(bb_name.to_owned());
                 for instr in bb.instrs.iter() {
                     // log::trace!("-->     {}", instr);
-                    // exprs.push(Expr::builder().push_comment(&format!("{}", instr)).build());
+                    exprs.push(Expr::builder().push_comment(&format!("{}", instr)).build());
                     exprs.push(Expr::parse(instr, ctx, &types, &self.globals));
                 }
 
@@ -405,7 +449,7 @@ impl LlvmContext {
                     _ => todo!("{:?}", &bb.term),
                 }
 
-                ctx.body.push((bb_name, exprs));
+                ctx.body.push(exprs);
             }
 
             let epilogue = Expr::builder()
@@ -431,11 +475,8 @@ impl LlvmContext {
                     Some(Token::I64(-ctx.stack_offset as u64)),
                 ))
                 .build();
-            ctx.prologue.push((
-                ctx.gen_name(),
-                // format!("{}_push_stack", func_name.strip_prefix()).into(),
-                vec![prologue_push_stack],
-            ));
+            ctx.prologue
+                .push(Block::from_code(ctx.gen_name(), vec![prologue_push_stack]));
             let prologue_jmp_start = Expr::builder()
                 .push_instr(Instr::new(
                     Opcode::Jmp,
@@ -446,12 +487,13 @@ impl LlvmContext {
                     None,
                 ))
                 .build();
-            ctx.prologue.push((
+            ctx.prologue.push(Block::from_code(
                 ctx.gen_name(),
                 // format!("{}_push_stack", func_name.strip_prefix()).into(),
                 vec![prologue_jmp_start],
             ));
-            ctx.epilogue.push((ret_label.into(), vec![epilogue]));
+            ctx.epilogue
+                .push(Block::from_code(ret_label.into(), vec![epilogue]));
         }
 
         // phase 3: translate to k4sm assembly
@@ -465,8 +507,8 @@ impl LlvmContext {
         }
 
         for (_func_name, func) in self.functions.iter() {
-            for (block_name, block) in func.prologue.iter() {
-                if let Name::Name(name) = block_name {
+            for block in func.prologue.iter() {
+                if let Name::Name(ref name) = block.name {
                     writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
                 }
 
@@ -482,8 +524,8 @@ impl LlvmContext {
                     }
                 }
             }
-            for (block_name, block) in func.body.iter() {
-                if let Name::Name(name) = block_name {
+            for block in func.body.iter() {
+                if let Name::Name(ref name) = block.name {
                     writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
                 }
                 for expr in block.iter() {
@@ -498,8 +540,8 @@ impl LlvmContext {
                     }
                 }
             }
-            for (block_name, block) in func.epilogue.iter() {
-                if let Name::Name(name) = block_name {
+            for block in func.epilogue.iter() {
+                if let Name::Name(ref name) = block.name {
                     writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
                 }
                 for expr in block.iter() {

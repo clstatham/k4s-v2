@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use llvm_ir::{
-    function::CallingConvention,
     types::{NamedStructDef, Typed, Types},
     ConstantRef, FPPredicate, Instruction, IntPredicate, Name, Operand, Type, TypeRef,
 };
@@ -154,6 +153,15 @@ pub enum ExprElem {
 /// Like an `Instr`, but operates on `Ssa`'s instead of raw `Tokens`, and can contain multiple `Instrs`.
 pub struct Expr {
     pub sequence: Vec<ExprElem>,
+}
+
+/// For cases where only a single instruction is needed.
+impl From<Instr> for Expr {
+    fn from(value: Instr) -> Self {
+        Self {
+            sequence: vec![ExprElem::Instr(value)],
+        }
+    }
 }
 
 impl Expr {
@@ -340,12 +348,12 @@ impl Expr {
                 };
                 let mut args = Vec::new();
 
-                for (arg, attrs) in instr.arguments.iter() {
+                for (arg, _attrs) in instr.arguments.iter() {
                     if let Operand::MetadataOperand = arg {
                     } else {
-                        if !attrs.is_empty() {
-                            dbg!(attrs);
-                        }
+                        // if !attrs.is_empty() {
+                        //     dbg!(attrs);
+                        // }
                         args.push(Ssa::parse_operand(arg, ctx, types, globals));
                     }
                 }
@@ -1054,7 +1062,7 @@ impl Expr {
                             Opcode::Add,
                             InstrSize::I64,
                             Some(tmp_dest.storage().to_owned()),
-                            Some(Token::I64(offset as u64)),
+                            Some(Token::I64(offset)),
                         ));
                     }
                     current_type = element_types[idx].as_ref().to_owned();

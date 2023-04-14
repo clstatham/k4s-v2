@@ -168,6 +168,7 @@ pub trait Ram {
 impl Ram for Box<[u8]> {
     fn peek(&self, size: InstrSize, addr: u64) -> Token {
         let addr = addr as usize;
+        if addr == 0 { panic!("Attempt to read null address" ) }
         match size {
             InstrSize::Unsized => panic!("Attempt to read a size of zero"),
             InstrSize::I8 => Token::I8(self[addr]),
@@ -182,6 +183,7 @@ impl Ram for Box<[u8]> {
 
     fn poke(&mut self, t: &Token, addr: u64) {
         let addr = addr as usize;
+        if addr == 0 { panic!("Attempt to write to null address") }
         match t {
             Token::I8(v) => self[addr] = *v,
             Token::I16(v) => self[addr..addr + 2].copy_from_slice(&v.to_bytes()),
@@ -244,6 +246,9 @@ impl MachineContext {
         ram[entry_point as usize..entry_point as usize + program.len()].copy_from_slice(program);
         regs.pc = entry_point;
         regs.sp = ram.len() as u64;
+
+        regs.rg = mem_size as u64;
+
         Ok(MachineContext {
             ram,
             regs,
@@ -463,8 +468,8 @@ impl MachineContext {
             },
             InstrSig::ValVal | InstrSig::ValAdr | InstrSig::Val => match lvalue {
                 Token::Register(reg) => {
-                    if instr.opcode == Opcode::Mov {
-                        // mov is special, since we don't actually do anything with whatever's currently in the register
+                    if instr.opcode == Opcode::Mov || instr.opcode == Opcode::Pop {
+                        // mov and pop are special, since we don't actually do anything with whatever's currently in the register
                         // (and we could be putting a different InstrSize in there)
                         let a = f(&Token::Unknown)?;
                         self.regs.set(reg, a);

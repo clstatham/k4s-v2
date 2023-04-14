@@ -4,8 +4,11 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
     parsers::{
-        asm::{data, header, header_entry, lab_offset_const, label, literal, opcode, size, token},
-        machine::tags,
+        asm::{
+            data, header, header_entry, lab_offset_const, label, literal, opcode, size, token,
+            UnlinkedRef, UnlinkedRefType,
+        },
+        machine::tags::{self, ADDRESS, LITERAL},
     },
     Data, Instr, InstrSize, Label, Linkage, Opcode, Primitive, Token,
 };
@@ -234,9 +237,7 @@ impl AssembledBlock {
 pub struct AssemblyContext {
     pub blocks: FxHashMap<String, AssembledBlock>,
     pub linked_refs: FxHashMap<String, u64>, // (label, addr found at)
-    pub unlinked_refs: FxHashMap<String, FxHashSet<u64>>, // (label, addrs found at)
-    pub linked_offset_refs: FxHashMap<(i64, String), u64>, // ((offset, label), addr found at)
-    pub unlinked_offset_refs: FxHashMap<(i64, String), FxHashSet<u64>>, // ((offset, label), addrs found at)
+    pub unlinked_refs: FxHashMap<String, FxHashSet<UnlinkedRef>>, // (label, addrs found at)
 
     pub entry_label: Option<Label>,
     pub used_labels: FxHashSet<usize>,
@@ -257,8 +258,6 @@ impl AssemblyContext {
             blocks: FxHashMap::default(),
             linked_refs: FxHashMap::default(),
             unlinked_refs: FxHashMap::default(),
-            linked_offset_refs: FxHashMap::default(),
-            unlinked_offset_refs: FxHashMap::default(),
             included_modules: FxHashSet::default(),
             entry_label: None,
             used_labels: FxHashSet::default(),
@@ -277,9 +276,9 @@ impl AssemblyContext {
         self.pc += bytes.len() as u64;
     }
 
+    // todo: includes
     pub fn assemble(&mut self) -> Result<Vec<u8>> {
         self.assemble_impl(None, true, &FxHashSet::default(), &FxHashMap::default())
-        // todo: re-enable link checking
     }
 
     fn assemble_impl(
@@ -308,50 +307,11 @@ impl AssemblyContext {
             let line_no = line_no + 1;
             let (junk, mut parsed_line) = ParsedLine::parse(line)
                 .context(format!("Error while parsing line {}:\n{}", line_no, line))?;
-            if let ParsedLine::Data(ref mut data) = parsed_line.asm {
-                // parse the junk as data
-                let string = junk.trim();
-                if let Ok((_junk, lit)) = literal(InstrSize::I64, string) {
-                    let lit = lit.as_integer::<u64>().unwrap();
-                    data.data = lit.to_bytes().to_vec();
-                } else if let Some(amount) = string.strip_prefix("resb") {
-                    let amount = amount.trim();
-                    let amount = if let Some(amount) = amount.strip_prefix("0x") {
-                        u64::from_str_radix(amount, 16).unwrap()
-                    } else {
-                        amount.parse::<u64>().unwrap()
-                    };
-                    data.data.extend_from_slice(&vec![0u8; amount as usize]);
-                } else if let Some(string) = string.strip_prefix('"') {
-                    if let Some(string) = string.strip_suffix('"') {
-                        let bytes = string.to_owned().into_bytes();
-                        let mut cursor = 0;
-                        while cursor < bytes.len() {
-                            if &bytes[cursor..bytes.len().min(cursor + 2)] == br"\x" {
-                                let d = u8::from_str_radix(
-                                    std::str::from_utf8(&bytes[cursor + 2..cursor + 4]).unwrap(),
-                                    16,
-                                )
-                                .unwrap();
-                                data.data.push(d);
-                                cursor += 4;
-                            } else {
-                                data.data.push(bytes[cursor]);
-                                cursor += 1;
-                            }
-                        }
-                        data.data.push(0);
-                    } else {
-                        return Err(Error::msg(format!(
-                            "Expected closing `\"` after opening `\"` in data on line {line_no}"
-                        )));
-                    }
-                } else {
-                    return Err(Error::msg(format!("Invalid data on line {line_no}")));
-                }
+            if let ParsedLine::Data(_) = parsed_line.asm {
                 data_lines.push(parsed_line.to_owned());
                 // self.push_program_bytes(&data.data);
-            } else if let ParsedLine::LabelOffsetConst(ref mut name, off, ref lab) = parsed_line.asm
+            } else if let ParsedLine::LabelOffsetConst(ref mut _name, _off, ref _lab) =
+                parsed_line.asm
             {
                 label_offset_const_lines.push(parsed_line.to_owned());
             } else if !junk.is_empty() && !junk.trim().starts_with(';') {
@@ -462,11 +422,11 @@ impl AssemblyContext {
             for line in block.lines.iter_mut() {
                 if let ParsedLine::Instr(ref mut instr) = line.asm {
                     let (size, refs) = instr.assemble(self.pc, &mut line.mc)?;
-                    for (refr, loc) in refs {
+                    for refr in refs.iter() {
                         self.unlinked_refs
-                            .entry(refr.name)
+                            .entry(refr.pointer.name.to_owned())
                             .or_insert(FxHashSet::default())
-                            .insert(loc);
+                            .insert(refr.to_owned());
                     }
                     self.pc += size as u64;
                 } else if let ParsedLine::Label(ref mut lab) = line.asm {
@@ -484,17 +444,7 @@ impl AssemblyContext {
                 self.push_program_bytes(&line.mc);
             }
         }
-        for label_offset_const in label_offset_const_lines {
-            if let ParsedLine::LabelOffsetConst(name, off, lab) = label_offset_const.asm {
-                if !self.linked_refs.contains_key(&name.name) {
-                    self.linked_refs.insert(name.name.to_owned(), self.pc);
-                    self.unlinked_offset_refs
-                        .entry((off, lab.name))
-                        .or_insert(FxHashSet::default())
-                        .insert(self.pc);
-                }
-            }
-        }
+
         for data_line in data_lines {
             if let ParsedLine::Data(data) = data_line.asm {
                 if !self.linked_refs.contains_key(&data.label.name) {
@@ -511,32 +461,73 @@ impl AssemblyContext {
 
         log::debug!("Found {} linked references.", self.linked_refs.len());
 
-        let mut undefined_count: usize = 0;
+        let mut undefined_refs = Vec::new();
 
-        for (lab, refs) in self.unlinked_refs.iter_mut() {
-            if let Some(loc) = self.linked_refs.get(lab) {
-                for refr in refs.drain() {
-                    self.output[refr as usize - self.entry_point as usize
-                        ..refr as usize - self.entry_point as usize + 8]
-                        .copy_from_slice(&loc.to_bytes());
-                }
-            } else {
-                undefined_count += 1;
+        for label_offset_const in label_offset_const_lines {
+            if let ParsedLine::LabelOffsetConst(name, off, lab) = label_offset_const.asm {
+                // if self.linked_refs.contains_key(&lab.name) {
+                // self.linked_refs.insert(name.name.to_owned(), self.pc);
+                // self.unlinked_offset_refs
+                //     .entry((off, lab.name))
+                //     .or_insert(FxHashSet::default())
+                //     .insert(self.pc);
+                // }
+                // self.linked_refs.insert(name.name.to_owned(), self.pc);
+                // self.push_program_bytes(&[ADDRESS, LITERAL]);
+                self.unlinked_refs
+                    .entry(lab.name.to_owned())
+                    .or_insert(FxHashSet::default())
+                    .insert(UnlinkedRef {
+                        ty: UnlinkedRefType::LabelOffset(off, lab.name.to_owned()),
+                        pointer: name.to_owned(),
+                        loc: self.pc,
+                    });
+
+                self.push_program_bytes(&[0; 8]);
             }
         }
-        for ((off, lab), refs) in self.unlinked_offset_refs.iter_mut() {
+
+        for (ref lab, ref mut refs) in self.unlinked_refs.drain() {
             if let Some(loc) = self.linked_refs.get(lab) {
                 for refr in refs.drain() {
-                    self.output[refr as usize - self.entry_point as usize
-                        ..refr as usize - self.entry_point as usize + 8]
-                        .copy_from_slice(&((*loc as i64 + off) as u64).to_bytes());
+                    match refr.ty {
+                        UnlinkedRefType::Label => self.output[refr.loc as usize
+                            - self.entry_point as usize
+                            ..refr.loc as usize - self.entry_point as usize + 8]
+                            .copy_from_slice(&loc.to_bytes()),
+                        UnlinkedRefType::LabelOffset(off, pointee) => {
+                            if let Some(pointee_loc) = self.linked_refs.get(&pointee).copied() {
+                                self.output[refr.loc as usize - self.entry_point as usize
+                                    ..refr.loc as usize - self.entry_point as usize + 8]
+                                    .copy_from_slice(
+                                        &((pointee_loc as i64 + off) as u64).to_bytes(),
+                                    );
+                            } else {
+                                undefined_refs.push(pointee.to_owned());
+                            }
+                        }
+                    }
                 }
             } else {
-                undefined_count += 1;
+                undefined_refs.push(lab.to_owned());
             }
         }
+        // for ((off, ref lab), ref mut refs) in self.unlinked_offset_refs.drain() {
+        //     if let Some(loc) = self.linked_refs.get(lab) {
+        //         for refr in refs.drain() {
+        //             self.output[refr as usize - self.entry_point as usize
+        //                 ..refr as usize - self.entry_point as usize + 8]
+        //                 .copy_from_slice(&((*loc as i64 + off) as u64).to_bytes());
+        //         }
+        //     } else {
+        //         undefined_refs.push(lab.to_owned());
+        //     }
+        // }
 
-        log::debug!("{} unlinked references remain.", undefined_count);
+        log::debug!("{} unlinked references remain:", undefined_refs.len());
+        for refr in undefined_refs {
+            log::debug!("Undefined reference to label {}", refr);
+        }
 
         self.kept_blocks = kept_blocks;
 

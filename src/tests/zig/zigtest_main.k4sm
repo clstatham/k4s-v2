@@ -9,6 +9,8 @@
 %llvm_dbg_value
     ret
 
+%llvm_dbg_declare
+    ret
 
 %printstrln_asm
     push i64 bp

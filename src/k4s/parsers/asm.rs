@@ -2,18 +2,20 @@ use anyhow::Result;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, char, one_of, space1},
+    character::{
+        complete::{alpha1, char, hex_digit1, one_of, space1},
+        streaming::alphanumeric1,
+    },
     combinator::{map, opt, recognize, value},
     error::Error,
     multi::{many0, many1},
     sequence::{preceded, terminated, tuple},
     IResult,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
-    contexts::asm::{AssemblyContext, Header},
-    Data, Instr, InstrSig, InstrSize, Label, Linkage, Opcode, Primitive, Register, Token,
+    contexts::asm::Header, Data, Instr, InstrSig, InstrSize, Label, Linkage, Opcode, Primitive,
+    Register, Token,
 };
 
 use super::machine::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
@@ -292,14 +294,65 @@ pub fn data(i: &str) -> IResult<&str, Token> {
                 value(4096, tag("align4096")),
             )),
             space1,
+            alt((
+                map(
+                    |i| literal(InstrSize::I64, i),
+                    |lit| lit.as_integer::<u64>().unwrap().to_bytes().to_vec(),
+                ),
+                map(
+                    tuple((
+                        tag("resb"),
+                        space1,
+                        alt((
+                            |i| decimal(InstrSize::I64, i),
+                            |i| hexadecimal(InstrSize::I64, i),
+                        )),
+                    )),
+                    |(_, _, tok)| vec![0u8; tok.as_integer::<u64>().unwrap() as usize],
+                ),
+                map(
+                    preceded(
+                        tag("\""),
+                        terminated(
+                            many1(alt((
+                                alphanumeric1,
+                                space1,
+                                recognize(tuple((tag("\\x"), hex_digit1))),
+                            ))),
+                            tag("\""),
+                        ),
+                    ),
+                    |string| {
+                        let mut data = Vec::new();
+                        let bytes = string.join("").into_bytes();
+                        let mut cursor = 0;
+                        while cursor < bytes.len() {
+                            if &bytes[cursor..bytes.len().min(cursor + 2)] == br"\x" {
+                                let d = u8::from_str_radix(
+                                    std::str::from_utf8(&bytes[cursor + 2..cursor + 4]).unwrap(),
+                                    16,
+                                )
+                                .unwrap();
+                                data.push(d);
+                                cursor += 4;
+                            } else {
+                                data.push(bytes[cursor]);
+                                cursor += 1;
+                            }
+                        }
+                        data.push(0); // doesn't hurt
+                        data
+                    },
+                ),
+            )),
         )),
-        |(_, name, _, align, _)| {
+        |(_, name, _, align, _, data)| {
             Token::Data(Data {
                 label: Label {
                     name: name.join(""),
                     linkage: Linkage::NeedsLinking,
                 },
-                data: Vec::new(),
+                data,
                 align,
             })
         },
@@ -337,12 +390,12 @@ pub fn reg_offset(i: &str) -> IResult<&str, Token> {
 pub fn lab_offset(i: &str) -> IResult<&str, Token> {
     map(
         tuple((
-            tag("("),
+            tag("["),
             opt(tag("-")),
             |i| decimal(InstrSize::I64, i),
             tag("+"),
             data_tag,
-            tag(")"),
+            tag("]"),
         )),
         |(_, neg, off, _, lab, _)| {
             if let Token::I64(off) = off {
@@ -451,7 +504,7 @@ pub fn size(asm: &str) -> IResult<&str, InstrSize> {
 }
 
 impl Token {
-    pub fn assemble(&mut self, pc: u64, line: &mut Vec<u8>) -> Option<(Label, u64)> {
+    pub fn assemble(&mut self, pc: u64, line: &mut Vec<u8>) -> Option<UnlinkedRef> {
         match self {
             Token::I8(val) => line.extend_from_slice(&[LITERAL, *val]),
             Token::I16(val) => {
@@ -486,15 +539,24 @@ impl Token {
                 line.extend_from_slice(&(*off as u64).to_bytes());
                 line.extend_from_slice(&[reg.mc_repr()]);
             }
-            Token::LabelOffset(_off, lab) => {
-                line.extend_from_slice(&[LITERAL]);
-                line.extend_from_slice(&[0; 8]);
-                return Some((lab.to_owned(), pc + 1));
-            }
+            // Token::LabelOffset(off, lab) => {
+            //     line.extend_from_slice(&[LITERAL]);
+            //     line.extend_from_slice(&[0; 8]);
+            //     return Some(UnlinkedRef {
+            //         ty: UnlinkedRefType::LabelOffset(off, lab),
+            //         pointee: lab.to_owned(),
+            //         loc: pc + 1,
+            //     });
+            // }
+            Token::LabelOffset(_, _) => todo!(), // these are current not implemented for non static instances
             Token::Label(lab) => {
                 line.extend_from_slice(&[LITERAL]);
                 line.extend_from_slice(&[0; 8]);
-                return Some((lab.to_owned(), pc + 1));
+                return Some(UnlinkedRef {
+                    ty: UnlinkedRefType::Label,
+                    pointer: lab.to_owned(),
+                    loc: pc + 1,
+                });
             }
             Token::Addr(adr) => {
                 line.extend_from_slice(&[ADDRESS]);
@@ -504,7 +566,11 @@ impl Token {
             Token::Data(data) => {
                 line.extend_from_slice(&[LITERAL]);
                 line.extend_from_slice(&[0; 8]);
-                return Some((data.label.to_owned(), pc + 1));
+                return Some(UnlinkedRef {
+                    ty: UnlinkedRefType::Label,
+                    pointer: data.label.to_owned(),
+                    loc: pc + 1,
+                });
             }
         }
         None
@@ -531,6 +597,19 @@ impl Opcode {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
+pub enum UnlinkedRefType {
+    Label,                    // single-pointers to locations in memory
+    LabelOffset(i64, String), // double-pointers that must be dereferenced to single-pointers at compile time
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
+pub struct UnlinkedRef {
+    pub ty: UnlinkedRefType,
+    pub pointer: Label,
+    pub loc: u64,
+}
+
 impl Instr {
     pub const fn new(
         opcode: Opcode,
@@ -550,7 +629,7 @@ impl Instr {
         &mut self,
         mut pc: u64,
         line: &mut Vec<u8>,
-    ) -> Result<(usize, Vec<(Label, u64)>)> {
+    ) -> Result<(usize, Vec<UnlinkedRef>)> {
         let opcode = self.opcode.mc_repr();
         let start = pc;
         let size = self.size.mc_repr();

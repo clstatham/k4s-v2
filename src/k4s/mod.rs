@@ -323,7 +323,7 @@ impl Display for Token {
             Self::Label(lab) => write!(f, "{}", lab),
             Self::Data(dat) => write!(f, "@{}", dat.label.name),
             Self::LabelOffset(off, lab) => {
-                write!(f, "({}+@{})", *off, lab.name)
+                write!(f, "[{}+@{}]", *off, lab.name)
             }
         }
     }

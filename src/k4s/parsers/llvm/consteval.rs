@@ -42,15 +42,11 @@ impl Ssa {
                     addr_space: 0,
                 }
                 .get_type(types),
-                // Token::Data(Data {
                 globals
                     .get(&ref_name.to_owned().into())
                     .map(|ssa| ssa.storage().to_owned())
                     .unwrap_or_else(|| Token::Label(Label::new_unlinked(ref_name.to_owned()))),
-                // Token::Label(Label::new_unlinked(ref_name.strip_prefix())),
-                // align: 1,
-                // data: Vec::new(),
-                // }),
+                // Token::LabelOffset(0, Label::new_unlinked(ref_name.to_owned())),
                 None,
             ),
             Constant::Undef(ty) => Self::new(
@@ -81,6 +77,10 @@ impl Ssa {
                     }),
                     Some(con.to_owned()),
                 )
+            }
+            Constant::Vector(elements) => {
+                // Self::new(name, ty, Token::Data(Data { label: Label::new_unlinked(name.strip_prefix()) }), agg_const)
+                todo!("{:?}", elements)
             }
             Constant::Array {
                 element_type,
@@ -203,6 +203,7 @@ impl Ssa {
                 //         Token::Label(addr_label),
                 //         None,
                 //     )
+                //     // addr
                 // } else {
                 Self::new(
                     name,
