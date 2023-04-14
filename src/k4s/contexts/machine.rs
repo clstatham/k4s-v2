@@ -95,7 +95,7 @@ pub struct Regs {
 }
 
 impl Regs {
-    pub fn get(&self, reg: Register, size: InstrSize) -> Token {
+    pub fn get(&self, reg: Register, size: InstrSize) -> Result<Token> {
         match reg {
             Register::Rz => Token::from_integer_size(0u8, size),
             Register::Ra => Token::from_integer_size(self.ra, size),
@@ -114,29 +114,30 @@ impl Regs {
             Register::Sp => Token::from_integer_size(self.sp, size),
             Register::Pc => Token::from_integer_size(self.pc, size),
             Register::Fl => Token::from_integer_size(self.fl.bits(), size),
-        }.unwrap_or_else(|| panic!("Error interpreting {} as {}", reg, size))
+        }.ok_or(Error::msg(format!("Error interpreting {} as {}", reg, size)))
     }
 
-    pub fn set(&mut self, reg: Register, val: Token) {
+    pub fn set(&mut self, reg: Register, val: Token) -> Result<()> {
         match reg {
-            Register::Rz => panic!("Attempt to write to RZ register"),
-            Register::Ra => self.ra = val.as_integer().unwrap(),
-            Register::Rb => self.rb = val.as_integer().unwrap(),
-            Register::Rc => self.rc = val.as_integer().unwrap(),
-            Register::Rd => self.rd = val.as_integer().unwrap(),
-            Register::Re => self.re = val.as_integer().unwrap(),
-            Register::Rf => self.rf = val.as_integer().unwrap(),
-            Register::Rg => self.rg = val.as_integer().unwrap(),
-            Register::Rh => self.rh = val.as_integer().unwrap(),
-            Register::Ri => self.ri = val.as_integer().unwrap(),
-            Register::Rj => self.rj = val.as_integer().unwrap(),
-            Register::Rk => self.rk = val.as_integer().unwrap(),
-            Register::Rl => self.rl = val.as_integer().unwrap(),
-            Register::Bp => self.bp = val.as_integer().unwrap(),
-            Register::Sp => self.sp = val.as_integer().unwrap(),
-            Register::Pc => self.pc = val.as_integer().unwrap(),
-            Register::Fl => self.fl = Fl::from_bits_truncate(val.as_integer().unwrap()),
+            Register::Rz => return Err(Error::msg("Attempt to write to RZ register")),
+            Register::Ra => self.ra = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rb => self.rb = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rc => self.rc = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rd => self.rd = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Re => self.re = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rf => self.rf = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rg => self.rg = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rh => self.rh = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Ri => self.ri = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rj => self.rj = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rk => self.rk = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Rl => self.rl = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Bp => self.bp = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Sp => self.sp = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Pc => self.pc = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
+            Register::Fl => self.fl = Fl::from_bits_truncate(val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?),
         }
+        Ok(())
     }
 }
 
@@ -161,29 +162,35 @@ impl Display for Regs {
 }
 
 pub trait Ram {
-    fn peek(&self, size: InstrSize, addr: u64) -> Token;
-    fn poke(&mut self, t: &Token, addr: u64);
+    fn peek(&self, size: InstrSize, addr: u64) -> Result<Token>;
+    fn poke(&mut self, t: &Token, addr: u64) -> Result<()>;
 }
 
 impl Ram for Box<[u8]> {
-    fn peek(&self, size: InstrSize, addr: u64) -> Token {
+    fn peek(&self, size: InstrSize, addr: u64) -> Result<Token> {
         let addr = addr as usize;
-        if addr == 0 { panic!("Attempt to read null address" ) }
+        if addr == 0 { return Err(Error::msg(format!("Attempt to read a size of {:?} at a null address", size))) }
+        if addr + size.in_bytes() > self.len() {
+            return Err(Error::msg(format!("Attempt to read a size of {:?} at address past the end of memory: {:#x}", size, addr)))
+        }
         match size {
-            InstrSize::Unsized => panic!("Attempt to read a size of zero"),
-            InstrSize::I8 => Token::I8(self[addr]),
-            InstrSize::I16 => Token::I16(u16::from_bytes(&self[addr..addr + 2]).unwrap()),
-            InstrSize::I32 => Token::I32(u32::from_bytes(&self[addr..addr + 4]).unwrap()),
-            InstrSize::F32 => Token::F32(f32::from_bytes(&self[addr..addr + 4]).unwrap()),
-            InstrSize::I64 => Token::I64(u64::from_bytes(&self[addr..addr + 8]).unwrap()),
-            InstrSize::F64 => Token::F64(f64::from_bytes(&self[addr..addr + 8]).unwrap()),
-            InstrSize::I128 => Token::I128(u128::from_bytes(&self[addr..addr + 16]).unwrap()),
+            InstrSize::Unsized => Err(Error::msg(format!("Attempt to read a size of zero at: {:#x}", addr))),
+            InstrSize::I8 => Ok(Token::I8(self[addr])),
+            InstrSize::I16 => Ok(Token::I16(u16::from_bytes(&self[addr..addr + 2]).unwrap())),
+            InstrSize::I32 => Ok(Token::I32(u32::from_bytes(&self[addr..addr + 4]).unwrap())),
+            InstrSize::F32 => Ok(Token::F32(f32::from_bytes(&self[addr..addr + 4]).unwrap())),
+            InstrSize::I64 => Ok(Token::I64(u64::from_bytes(&self[addr..addr + 8]).unwrap())),
+            InstrSize::F64 => Ok(Token::F64(f64::from_bytes(&self[addr..addr + 8]).unwrap())),
+            InstrSize::I128 => Ok(Token::I128(u128::from_bytes(&self[addr..addr + 16]).unwrap())),
         }
     }
 
-    fn poke(&mut self, t: &Token, addr: u64) {
+    fn poke(&mut self, t: &Token, addr: u64) -> Result<()> {
         let addr = addr as usize;
-        if addr == 0 { panic!("Attempt to write to null address") }
+        if addr == 0 { return Err(Error::msg(format!("Attempt to write {:?} at null address", t))) }
+        if addr + t.value_size_in_bytes() > self.len() {
+            return Err(Error::msg(format!("Attempt to write {:?} at address past the end of memory: {:#x}", t, addr)))
+        }
         match t {
             Token::I8(v) => self[addr] = *v,
             Token::I16(v) => self[addr..addr + 2].copy_from_slice(&v.to_bytes()),
@@ -192,8 +199,9 @@ impl Ram for Box<[u8]> {
             Token::I64(v) => self[addr..addr + 8].copy_from_slice(&v.to_bytes()),
             Token::F64(v) => self[addr..addr + 8].copy_from_slice(&v.to_bytes()),
             Token::I128(v) => self[addr..addr + 16].copy_from_slice(&v.to_bytes()),
-            _ => panic!("Invalid token for writing: {:?}", t),
+            _ => return Err(Error::msg(format!("Invalid token for writing: {:?}", t))),
         }
+        Ok(())
     }
 }
 
@@ -210,7 +218,7 @@ pub struct MachineContext {
     pub instr_history: Vec<String>,
     pub output_history: String,
     pub stack_frame: Vec<(u64, u64)>,
-    pub error: Option<Error>,
+    pub error: Option<String>,
 }
 
 impl MachineContext {
@@ -274,16 +282,12 @@ impl MachineContext {
         log::debug!("\n{}", self.regs);
         if let Some(tok) = &instr.arg0 {
             let tok_eval = self
-                .eval_token(tok.to_owned(), InstrSize::I64)?
-                .as_integer::<u64>()
-                .unwrap();
+                .eval_token(tok.to_owned(), InstrSize::I64).unwrap_or(Token::Unknown);
             log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
         }
         if let Some(tok) = &instr.arg1 {
             let tok_eval = self
-                .eval_token(tok.to_owned(), InstrSize::I64)?
-                .as_integer::<u64>()
-                .unwrap();
+                .eval_token(tok.to_owned(), InstrSize::I64).unwrap_or(Token::Unknown);
             log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
         }
         
@@ -293,7 +297,7 @@ impl MachineContext {
             let sp = self.regs.sp - self.regs.sp % 8;
             let mut out = Vec::new();
             for adr in (sp..=bp).rev().step_by(8) {
-                out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).as_integer().unwrap()));
+                out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).context("Error generating stack frame info")?.as_integer().unwrap()));
             }
             out
         };
@@ -303,20 +307,24 @@ impl MachineContext {
             &instr.display_with_symbols(&self.debug_symbols)
         );
 
-        match self.emulate_instr(&instr)? {
-            MachineState::Continue => {
+        match self.emulate_instr(&instr).context(format!("Error emulating instruction `{}`", instr)) {
+            Ok(MachineState::Continue) => {
                 self.regs.pc += instr.mc_size_in_bytes() as u64;
                 Ok(MachineState::Continue)
             }
-            MachineState::ContDontUpdatePc => {
+            Ok(MachineState::ContDontUpdatePc) => {
                 if self.regs.pc == 0 {
-                    self.error = Some(Error::msg("Jump to null address"));
+                    self.error = Some("Jump to null address".into());
                     Err(Error::msg("Jump to null address"))
                 } else {
                     Ok(MachineState::Continue)
                 }
             }
-            MachineState::Halt => Ok(MachineState::Halt),
+            Ok(MachineState::Halt) => Ok(MachineState::Halt),
+            Err(e) => {
+                self.error = Some(e.to_string());
+                Err(e)
+            }
         }
     }
 
@@ -328,15 +336,15 @@ impl MachineContext {
         }
     }
 
-    fn push(&mut self, val: Token) {
+    fn push(&mut self, val: Token) -> Result<()> {
         self.regs.sp -= val.value_size_in_bytes() as u64;
-        self.ram.poke(&val, self.regs.sp);
+        self.ram.poke(&val, self.regs.sp).context(format!("Error pushing `{}` to stack", val))
     }
 
-    fn pop(&mut self, size: InstrSize) -> Token {
-        let val = self.ram.peek(size, self.regs.sp);
+    fn pop(&mut self, size: InstrSize) -> Result<Token> {
+        let val = self.ram.peek(size, self.regs.sp)?;
         self.regs.sp += val.value_size_in_bytes() as u64;
-        val
+        Ok(val)
     }
 
     fn offset_to_addr(&self, token: Token) -> Token {
@@ -344,9 +352,9 @@ impl MachineContext {
             Token::Addr(Box::new(Token::I64(
                 (self
                     .regs
-                    .get(reg, InstrSize::I64)
+                    .get(reg, InstrSize::I64).unwrap() // safe since regs are always 64 bit
                     .as_integer::<u64>()
-                    .unwrap() as i64
+                    .unwrap() as i64 // safe since regs are always 64 bit
                     + offset) as u64,
             )))
         } else {
@@ -354,29 +362,28 @@ impl MachineContext {
         }
     }
 
-    fn register_to_value(&self, token: Token, size: InstrSize) -> Token {
+    fn register_to_value(&self, token: Token, size: InstrSize) -> Result<Token> {
         if let Token::Register(reg) = token {
             self.regs.get(reg, size)
         } else {
-            token
+            Ok(token)
         }
     }
 
     fn peek_addr(&self, token: Token, target_size: InstrSize) -> Result<Token> {
         if let Token::Addr(ref tok) = token {
-            // let addr = self.eval_token(*tok.to_owned(), InstrSize::I64)?;
             if let Token::I64(addr) = **tok {
-                Ok(self.ram.peek(target_size, addr))
+                self.ram.peek(target_size, addr)
             } else if let Token::Register(reg) = **tok {
-                Ok(self.ram.peek(
+                self.ram.peek(
                     target_size,
                     self.regs
-                        .get(reg, InstrSize::I64)
+                        .get(reg, InstrSize::I64).unwrap() // safe since regs are always 64 bit
                         .as_integer()
-                        .unwrap(),
-                ))
+                        .unwrap(), // safe since regs are always 64 bit
+                )
             } else {
-                Err(Error::msg(format!("Error parsing addr token: {:?}", token)))
+                Err(Error::msg(format!("Error parsing addr token: `{}`", token)))
             }
         } else {
             Ok(token)
@@ -389,7 +396,7 @@ impl MachineContext {
             if let Token::I64(_) = addr {
                 Ok(addr)
             } else {
-                Err(Error::msg(format!("Error parsing addr token: {:?}", token)))
+                Err(Error::msg(format!("Error parsing addr token: `{}`", token)))
             }
         } else {
             Ok(token)
@@ -397,9 +404,9 @@ impl MachineContext {
     }
 
     fn eval_token(&self, token: Token, target_size: InstrSize) -> Result<Token> {
-        let token = self.register_to_value(token, target_size);
+        let token = self.register_to_value(token.to_owned(), target_size).context(format!("Error evaluating token `{}` to size `{}`", token, target_size))?;
         let token = self.offset_to_addr(token);
-        let token = self.peek_addr(token, target_size)?;
+        let token = self.peek_addr(token.to_owned(), target_size).context(format!("Error evaluating token `{}` to size `{}`", token, target_size))?;
         // the token should now be in integer (or floating point) form
         assert!(
             matches!(
@@ -426,7 +433,7 @@ impl MachineContext {
                     Ok(val)
                 } else {
                     Err(Error::msg(format!(
-                        "Error parsing first argument: {:?}",
+                        "Error parsing first argument: `{}`",
                         token
                     )))
                 }
@@ -435,7 +442,7 @@ impl MachineContext {
                 self.eval_token(token, instr.size)
             }
             _ => Err(Error::msg(format!(
-                "Error parsing first argument: {:?}",
+                "Error parsing first argument: `{}`",
                 token
             ))),
         }
@@ -452,12 +459,12 @@ impl MachineContext {
             InstrSig::AdrAdr | InstrSig::AdrVal | InstrSig::Adr => match lvalue {
                 Token::Addr(ref addr) => {
                     let addr = match *addr.to_owned() {
-                        Token::Register(reg) => self.regs.get(reg, InstrSize::I64).as_integer().unwrap(),
+                        Token::Register(reg) => self.regs.get(reg, InstrSize::I64).unwrap().as_integer().unwrap(),
                         _ => addr.as_integer().unwrap(),
                     };
-                    let a = self.ram.peek(instr.size, addr);
+                    let a = self.ram.peek(instr.size, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
                     let a = f(&a)?;
-                    self.ram.poke(&a, addr);
+                    self.ram.poke(&a, addr).context(format!("Error assigning lvalue `{}` with `{}`", lvalue, a))?;
                     Ok(())
                 }
                 _ => Err(Error::msg(format!(
@@ -471,24 +478,24 @@ impl MachineContext {
                     if instr.opcode == Opcode::Mov || instr.opcode == Opcode::Pop {
                         // mov and pop are special, since we don't actually do anything with whatever's currently in the register
                         // (and we could be putting a different InstrSize in there)
-                        let a = f(&Token::Unknown)?;
-                        self.regs.set(reg, a);
+                        let a = f(&Token::Unknown).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
+                        self.regs.set(reg, a).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
                         Ok(())
                     } else {
-                        let a = self.regs.get(reg, instr.size);
-                        let a = f(&a)?;
-                        self.regs.set(reg, a);
+                        let a = self.regs.get(reg, instr.size).context(format!("Error interpreting register `{}` as `{}`", reg, instr.size))?;
+                        let a = f(&a).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
+                        self.regs.set(reg, a).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
                         Ok(())
                     }
                     
                 }
                 Token::RegOffset(..) => {
-                    let addr = self.offset_to_addr(lvalue);
-                    let addr = self.addr_to_value(addr)?.as_integer().unwrap();
+                    let addr = self.offset_to_addr(lvalue.to_owned());
+                    let addr = self.addr_to_value(addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?.as_integer().unwrap();
                     // let value = self.addr_to_value(addr, instr.size).unwrap().as_integer().unwrap();
-                    let a = self.ram.peek(instr.size, addr);
-                    let a = f(&a)?;
-                    self.ram.poke(&a, addr);
+                    let a = self.ram.peek(instr.size, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
+                    let a = f(&a).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
+                    self.ram.poke(&a, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
                     Ok(())
                 }
                 _ => Err(Error::msg(format!(
@@ -518,10 +525,10 @@ impl MachineContext {
                 self.assign_lvalue_with(arg0?, instr, |_| arg1)?;
             }
             Opcode::Push => {
-                self.push(self.read0(arg0?, instr)?);
+                self.push(self.read0(arg0?, instr)?)?;
             }
             Opcode::Pop => {
-                let rvalue = self.pop(instr.size);
+                let rvalue = self.pop(instr.size)?;
                 self.assign_lvalue_with(arg0?, instr, |_| Ok(rvalue))?;
             }
             Opcode::Add => {
@@ -578,7 +585,7 @@ impl MachineContext {
             }
             Opcode::Printc => {
                 let chr = self.read0(arg0?, instr)?;
-                let chr = chr.as_integer::<u8>().ok_or(Error::msg(format!("Error converting to u8: {:?}", chr)))?;
+                let chr = chr.as_integer::<u8>().ok_or(Error::msg(format!("Error converting token to u8: {:?}", chr)))?;
                 print!(
                     "{}",
                     std::str::from_utf8(&[chr]).map_err(|_| Error::msg(format!("Error converting to utf-8: {:2x}", chr)))?
@@ -590,12 +597,12 @@ impl MachineContext {
                 )?;
             }
             Opcode::Call => {
-                self.push(Token::I64(self.regs.pc + instr.mc_size_in_bytes() as u64));
+                self.push(Token::I64(self.regs.pc + instr.mc_size_in_bytes() as u64)).context("Error pushing return addr in `call` instruction")?;
                 self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
                 return Ok(MachineState::ContDontUpdatePc);
             }
             Opcode::Ret => {
-                self.regs.pc = self.pop(InstrSize::I64).as_integer().unwrap();
+                self.regs.pc = self.pop(InstrSize::I64)?.as_integer().unwrap();
                 return Ok(MachineState::ContDontUpdatePc);
             }
             Opcode::Cmp => {

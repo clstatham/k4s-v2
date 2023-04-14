@@ -17,7 +17,7 @@ pub fn test_assemble() -> Result<()> {
         file.read_to_string(&mut asm)?;
     }
     let mut assembler = AssemblyContext::new(asm);
-    let program = assembler.assemble()?;
+    let program = assembler.assemble(true)?;
     let mut file = File::create("target/test1.k4s")?;
     file.write_all(&program)?;
     Ok(())
@@ -58,7 +58,7 @@ pub fn test_llvm() -> Result<()> {
         file.read_to_string(&mut asm)?;
     }
     let mut assembler = AssemblyContext::new(asm);
-    let program = assembler.assemble()?;
+    let program = assembler.assemble(true)?;
     let mut file = File::create("target/test1.k4s")?;
     file.write_all(&program)?;
     Ok(())

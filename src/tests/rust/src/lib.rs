@@ -2,7 +2,7 @@
 #![no_main]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-use core::fmt::{Display, Write};
+use core::fmt::Write;
 #[cfg(not(test))]
 use core::panic::PanicInfo;
 

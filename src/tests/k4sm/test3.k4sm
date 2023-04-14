@@ -1,0 +1,15 @@
+!ent %_start @ 0x1000
+
+@global_0 align1 "a"
+@global_1 align0 resb 0
+@global_1_elem0 (0+@global_0)
+@global_1_elem1 align1 $0xa
+
+%_start
+    mov i64 ra @global_1
+    mov i64 ra [ra]
+    printc i8 [ra]
+    mov i64 ra @global_1
+    add i64 ra $8
+    printc i8 [ra]
+    hlt

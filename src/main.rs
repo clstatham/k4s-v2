@@ -33,9 +33,11 @@ enum Commands {
     Debug { binary: PathBuf },
     /// Build *.k4sm assembly and LLVM *.bc bitcode into a compiled k4s binary
     Build {
-        sources: Vec<PathBuf>,
+        #[arg(short, long, action = clap::ArgAction::Count)]
+        release: u8,
         #[arg(short, long)]
         output: PathBuf,
+        sources: Vec<PathBuf>,
     },
 }
 
@@ -69,7 +71,7 @@ fn build_llvm(mut src_path: PathBuf) -> Result<Option<PathBuf>> {
     }
 }
 
-fn build_asm(paths: Vec<PathBuf>, mut out_path: PathBuf) -> Result<()> {
+fn build_asm(paths: Vec<PathBuf>, mut out_path: PathBuf, include_symbols: bool) -> Result<()> {
     let mut asm = String::new();
     for path in paths {
         let mut file = File::open(path)?;
@@ -78,7 +80,7 @@ fn build_asm(paths: Vec<PathBuf>, mut out_path: PathBuf) -> Result<()> {
     }
     let mut assembler = AssemblyContext::new(asm);
     log::info!("Assembling {}.", out_path.as_path().to_string_lossy());
-    let program = assembler.assemble()?;
+    let program = assembler.assemble(include_symbols)?;
     out_path.set_extension("k4s");
     let mut file = File::create(&out_path)?;
     file.write_all(&program)?;
@@ -110,7 +112,11 @@ fn main() -> Result<()> {
         Commands::Debug { binary } => {
             debugger::debugger_main(binary)?;
         }
-        Commands::Build { sources, output } => {
+        Commands::Build {
+            sources,
+            output,
+            release,
+        } => {
             let mut asm_files = vec![];
             for source_path in sources {
                 if let Ok(paths) = glob::glob(source_path.as_os_str().to_str().ok_or(
@@ -130,7 +136,11 @@ fn main() -> Result<()> {
                     asm_files.push(source_path);
                 }
             }
-            build_asm(asm_files, output)?;
+            if release > 0 {
+                build_asm(asm_files, output, false)?;
+            } else {
+                build_asm(asm_files, output, true)?;
+            }
         }
     }
 
