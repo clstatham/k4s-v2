@@ -10,7 +10,7 @@ use crate::k4s::{
         },
         machine::tags,
     },
-    Data, Instr, InstrSize, Label, Linkage, Opcode, Primitive, Token,
+    Data, Instr, InstrSize, Label, Opcode, Primitive, Token,
 };
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ impl ParsedLine {
             },
             Self::Label(lab) => format!("{}", lab),
             Self::Data(dat) => format!("{} align{} <data>", dat.label, dat.align),
-            Self::LabelOffsetConst(name, off, lab) => format!("@{} ({}+{})", name.name, off, lab),
+            Self::LabelOffsetConst(name, off, lab) => format!("@{} ({}+{})", name.name(), off, lab),
             Self::Instr(instr) => format!("    {}", instr.display_with_symbols(symbols)),
         }
     }
@@ -182,30 +182,14 @@ impl AssembledLine {
         }
     }
 
-    pub fn references(&self, label: &str) -> bool {
-        if let ParsedLine::Instr(ref instr) = self.asm {
-            if let Some(Token::Label(ref arg0_lab)) = instr.arg0 {
-                if arg0_lab.name == label {
-                    return true;
-                }
-            }
-            if let Some(Token::Label(ref arg0_lab)) = instr.arg1 {
-                if arg0_lab.name == label {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     pub fn all_label_refs(&self) -> Vec<String> {
         let mut out = Vec::new();
         if let ParsedLine::Instr(ref instr) = self.asm {
             if let Some(Token::Label(ref arg0_lab)) = instr.arg0 {
-                out.push(arg0_lab.name.to_owned());
+                out.push(arg0_lab.name());
             }
             if let Some(Token::Label(ref arg1_lab)) = instr.arg1 {
-                out.push(arg1_lab.name.to_owned());
+                out.push(arg1_lab.name());
             }
         }
         out
@@ -221,10 +205,6 @@ pub struct AssembledBlock {
 }
 
 impl AssembledBlock {
-    pub fn references(&self, other_name: &str) -> bool {
-        self.lines.iter().any(|line| line.references(other_name))
-    }
-
     pub fn all_label_refs(&self) -> Vec<String> {
         let mut out = Vec::new();
         for line in self.lines.iter() {
@@ -306,13 +286,12 @@ impl AssemblyContext {
         let mut in_function = false;
         let mut current_function = None;
         let mut data_lines = Vec::default();
-        // let mut label_offset_const_lines = Vec::default();
         for (line_no, line) in self.input.clone().lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
             }
             let line_no = line_no + 1;
-            let (junk, mut parsed_line) = ParsedLine::parse(line)
+            let (junk, parsed_line) = ParsedLine::parse(line)
                 .context(format!("Error while parsing line {}:\n{}", line_no, line))?;
             if let ParsedLine::Data(_) = parsed_line.asm {
                 data_lines.push(parsed_line.to_owned());
@@ -356,7 +335,7 @@ impl AssemblyContext {
                     if !in_function {
                         in_function = true;
                         current_function = Some(AssembledBlock {
-                            name: lab.name.to_owned(),
+                            name: lab.name().to_owned(),
                             refs: 0,
                             loc: 0,
                             lines: Vec::new(),
@@ -397,11 +376,11 @@ impl AssemblyContext {
             .blocks
             .iter()
             .filter(|(name, block)| {
-                block.refs > 0 || name == &&self.entry_label.as_ref().unwrap().name
+                block.refs > 0 || name == &&self.entry_label.as_ref().unwrap().name()
             })
             .map(|(_, block)| block.to_owned())
             .collect::<Vec<_>>();
-        kept_blocks.sort_by_key(|block| block.name != self.entry_label.as_ref().unwrap().name);
+        kept_blocks.sort_by_key(|block| block.name != self.entry_label.as_ref().unwrap().name());
 
         let thrown_away_count = self.blocks.len() - kept_blocks.len();
         log::debug!("Threw away {} unused blocks!", thrown_away_count);
@@ -409,7 +388,7 @@ impl AssemblyContext {
         self.pc = self.entry_point;
 
         for block in kept_blocks.iter_mut() {
-            if block.name == self.entry_label.as_ref().unwrap().name {
+            if block.name == self.entry_label.as_ref().unwrap().name() {
                 log::trace!(
                     "Assembling block {} (entry point, {} lines)",
                     block.name,
@@ -429,15 +408,14 @@ impl AssemblyContext {
                     let (size, refs) = instr.assemble(self.pc, &mut line.mc)?;
                     for refr in refs.iter() {
                         self.unlinked_refs
-                            .entry(refr.pointer.name.to_owned())
+                            .entry(refr.label.to_owned())
                             .or_insert(FxHashSet::default())
                             .insert(refr.to_owned());
                     }
                     self.pc += size as u64;
                 } else if let ParsedLine::Label(ref mut lab) = line.asm {
-                    if !self.linked_refs.contains_key(&lab.name) {
-                        lab.linkage = Linkage::Linked(self.pc);
-                        self.linked_refs.insert(lab.name.to_owned(), self.pc);
+                    if !self.linked_refs.contains_key(&lab.name()) {
+                        self.linked_refs.insert(lab.name().to_owned(), self.pc);
                     }
                 }
             }
@@ -452,25 +430,26 @@ impl AssemblyContext {
 
         for data_line in data_lines {
             if let ParsedLine::Data(data) = data_line.asm {
-                if !self.linked_refs.contains_key(&data.label.name) {
+                if !self.linked_refs.contains_key(&data.label.name()) {
                     if data.align > 0 {
                         let pad = (data.align - (self.pc as usize % data.align)) % data.align;
                         self.push_program_bytes(&vec![0; pad]);
                     }
-                    self.linked_refs.insert(data.label.name.to_owned(), self.pc);
+                    self.linked_refs
+                        .insert(data.label.name().to_owned(), self.pc);
                     self.push_program_bytes(&data.data);
                 }
             } else if let ParsedLine::LabelOffsetConst(name, off, lab) = data_line.asm {
                 self.unlinked_refs
-                    .entry(lab.name.to_owned())
+                    .entry(lab.name().to_owned())
                     .or_insert(FxHashSet::default())
                     .insert(UnlinkedRef {
-                        ty: UnlinkedRefType::LabelOffset(off, lab.name.to_owned()),
-                        pointer: name.to_owned(),
+                        ty: UnlinkedRefType::LabelOffset(off),
+                        label: lab.name().to_owned(),
                         loc: self.pc,
                     });
-                if !self.linked_refs.contains_key(&name.name) {
-                    self.linked_refs.insert(name.name.to_owned(), self.pc);
+                if !self.linked_refs.contains_key(&name.name()) {
+                    self.linked_refs.insert(name.name().to_owned(), self.pc);
                 }
 
                 self.push_program_bytes(&[0; 8]);
@@ -489,15 +468,15 @@ impl AssemblyContext {
                             - self.entry_point as usize
                             ..refr.loc as usize - self.entry_point as usize + 8]
                             .copy_from_slice(&loc.to_bytes()),
-                        UnlinkedRefType::LabelOffset(off, pointee) => {
-                            if let Some(pointee_loc) = self.linked_refs.get(&pointee).copied() {
+                        UnlinkedRefType::LabelOffset(off) => {
+                            if let Some(pointee_loc) = self.linked_refs.get(&refr.label).copied() {
                                 self.output[refr.loc as usize - self.entry_point as usize
                                     ..refr.loc as usize - self.entry_point as usize + 8]
                                     .copy_from_slice(
                                         &((pointee_loc as i64 + off) as u64).to_bytes(),
                                     );
                             } else {
-                                undefined_refs.push(pointee.to_owned());
+                                undefined_refs.push(refr.label.to_owned());
                             }
                         }
                     }
@@ -518,7 +497,7 @@ impl AssemblyContext {
             .kept_blocks
             .iter()
             .find_map(|block| {
-                if self.entry_label.as_ref().unwrap().name == block.name {
+                if self.entry_label.as_ref().unwrap().name() == block.name {
                     Some(block.loc)
                 } else {
                     None

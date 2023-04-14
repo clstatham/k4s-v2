@@ -128,10 +128,10 @@
     ret
 
 %llvm_assume
-    cmp i8 rg rz
-    jne i64 %llvm_assume_passed
-    und
-%llvm_assume_passed
+;     cmp i8 rg rz
+;     jne i64 %llvm_assume_passed
+;     und
+; %llvm_assume_passed
     ret
 
 %llvm_lifetime_start_p0i8

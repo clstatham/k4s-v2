@@ -17,7 +17,7 @@ use crate::k4s::{
         consteval::{NameExt, TypeExt},
         Expr, ExprElem, Ssa,
     },
-    Instr, InstrSize, Label, Linkage, Opcode, Register, Token, GP_REGS,
+    Instr, InstrSize, Label, Opcode, Register, Token, GP_REGS,
 };
 
 pub struct Block {
@@ -184,7 +184,7 @@ impl LlvmContext {
             let ssa = Ssa::new(
                 func.name.to_owned().into(),
                 func.get_type(&types),
-                Token::Label(Label::new_unlinked(func.name.to_owned())),
+                Token::Label(Label::new(func.name.to_owned())),
                 None,
             );
 
@@ -297,17 +297,9 @@ impl LlvmContext {
                     .build();
                 param_pushes.push(expr);
             }
-            ctx.prologue.push(Block::from_code(
-                ctx.gen_name(),
-                // format!("{}_push_params", ctx.name.to_owned().strip_prefix()).into(),
-                param_pushes,
-            ));
 
             let ret_label = format!("{}_ret", self.current_func.as_ref().unwrap().strip_prefix());
-            let ret_label_tok = Token::Label(Label {
-                name: ret_label.to_owned(),
-                linkage: Linkage::NeedsLinking,
-            });
+            let ret_label_tok = Token::Label(Label::new(ret_label.to_owned()));
 
             let mut bb_names = Vec::new();
             for bb in func.basic_blocks.iter() {
@@ -318,7 +310,11 @@ impl LlvmContext {
                 let mut exprs = Block::new(bb_name.to_owned());
                 for instr in bb.instrs.iter() {
                     // log::trace!("-->     {}", instr);
-                    exprs.push(Expr::builder().push_comment(&format!("{}", instr)).build());
+                    exprs.push(
+                        Expr::builder()
+                            .push_comment(&format!("\n;{}", instr))
+                            .build(),
+                    );
                     exprs.push(Expr::parse(instr, ctx, &types, &self.globals));
                 }
 
@@ -328,7 +324,7 @@ impl LlvmContext {
                             Opcode::Mov,
                             InstrSize::I64,
                             Some(ctx.last_block.as_ref().unwrap().clone()),
-                            Some(Token::Label(Label::new_unlinked(bb_name.strip_prefix()))),
+                            Some(Token::Label(Label::new(bb_name.strip_prefix()))),
                         ))
                         .build(),
                 );
@@ -383,19 +379,13 @@ impl LlvmContext {
                             .push_instr(Instr::new(
                                 Opcode::Jne,
                                 InstrSize::I64,
-                                Some(Token::Label(Label {
-                                    name: true_dest.clone(),
-                                    linkage: Linkage::NeedsLinking,
-                                })),
+                                Some(Token::Label(Label::new(true_dest.clone()))),
                                 None,
                             ))
                             .push_instr(Instr::new(
                                 Opcode::Jmp,
                                 InstrSize::I64,
-                                Some(Token::Label(Label {
-                                    name: false_dest.clone(),
-                                    linkage: Linkage::NeedsLinking,
-                                })),
+                                Some(Token::Label(Label::new(false_dest.clone()))),
                                 None,
                             ))
                             .push_instr(Instr::new(Opcode::Und, InstrSize::Unsized, None, None))
@@ -409,7 +399,7 @@ impl LlvmContext {
                             .push_instr(Instr::new(
                                 Opcode::Jmp,
                                 InstrSize::I64,
-                                Some(Token::Label(Label::new_unlinked(dest))),
+                                Some(Token::Label(Label::new(dest))),
                                 None,
                             ))
                             .build();
@@ -433,11 +423,21 @@ impl LlvmContext {
                             expr.push_instr(Instr::new(
                                 Opcode::Jeq,
                                 InstrSize::I64,
-                                Some(Token::Label(Label::new_unlinked(dest))),
+                                Some(Token::Label(Label::new(dest))),
                                 None,
                             ));
                         }
-                        expr.push_instr(Instr::new(Opcode::Und, InstrSize::Unsized, None, None));
+                        expr.push_instr(Instr::new(
+                            Opcode::Jmp,
+                            InstrSize::I64,
+                            Some(Token::Label(Label::new(format!(
+                                "{}_{}",
+                                func_name.strip_prefix(),
+                                switch.default_dest.strip_prefix()
+                            )))),
+                            None,
+                        ));
+                        // expr.push_instr(Instr::new(Opcode::Und, InstrSize::Unsized, None, None));
                         exprs.push(expr);
                     }
                     Terminator::Unreachable(_) => {
@@ -477,13 +477,16 @@ impl LlvmContext {
                 .build();
             ctx.prologue
                 .push(Block::from_code(ctx.gen_name(), vec![prologue_push_stack]));
+            ctx.prologue.push(Block::from_code(
+                ctx.gen_name(),
+                // format!("{}_push_params", ctx.name.to_owned().strip_prefix()).into(),
+                param_pushes,
+            ));
             let prologue_jmp_start = Expr::builder()
                 .push_instr(Instr::new(
                     Opcode::Jmp,
                     InstrSize::I64,
-                    Some(Token::Label(Label::new_unlinked(
-                        bb_names[0].strip_prefix(),
-                    ))),
+                    Some(Token::Label(Label::new(bb_names[0].strip_prefix()))),
                     None,
                 ))
                 .build();
@@ -509,7 +512,7 @@ impl LlvmContext {
         for (_func_name, func) in self.functions.iter() {
             for block in func.prologue.iter() {
                 if let Name::Name(ref name) = block.name {
-                    writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
+                    writeln!(out, "{}", Label::new(*name.to_owned()))?;
                 }
 
                 for expr in block.iter() {
@@ -517,7 +520,7 @@ impl LlvmContext {
                         match elem {
                             ExprElem::Instr(instr) => writeln!(out, "    {}", instr)?,
                             ExprElem::Label(label) => {
-                                writeln!(out, "{}", Label::new_unlinked(label.strip_prefix()))?
+                                writeln!(out, "{}", Label::new(label.strip_prefix()))?
                             }
                             ExprElem::Comment(comment) => writeln!(out, ";{}", comment)?,
                         }
@@ -526,14 +529,14 @@ impl LlvmContext {
             }
             for block in func.body.iter() {
                 if let Name::Name(ref name) = block.name {
-                    writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
+                    writeln!(out, "{}", Label::new(*name.to_owned()))?;
                 }
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
                             ExprElem::Instr(instr) => writeln!(out, "    {}", instr)?,
                             ExprElem::Label(label) => {
-                                writeln!(out, "{}", Label::new_unlinked(label.strip_prefix()))?
+                                writeln!(out, "{}", Label::new(label.strip_prefix()))?
                             }
                             ExprElem::Comment(comment) => writeln!(out, ";{}", comment)?,
                         }
@@ -542,14 +545,14 @@ impl LlvmContext {
             }
             for block in func.epilogue.iter() {
                 if let Name::Name(ref name) = block.name {
-                    writeln!(out, "{}", Label::new_unlinked(*name.to_owned()))?;
+                    writeln!(out, "{}", Label::new(*name.to_owned()))?;
                 }
                 for expr in block.iter() {
                     for elem in expr.sequence.iter() {
                         match elem {
                             ExprElem::Instr(instr) => writeln!(out, "    {}", instr)?,
                             ExprElem::Label(label) => {
-                                writeln!(out, "{}", Label::new_unlinked(label.strip_prefix()))?
+                                writeln!(out, "{}", Label::new(label.strip_prefix()))?
                             }
                             ExprElem::Comment(comment) => writeln!(out, ";{}", comment)?,
                         }
@@ -604,7 +607,7 @@ impl LlvmContext {
                             writeln!(out, "\"").unwrap();
                         }
                         Token::LabelOffset(off, lab) => {
-                            writeln!(out, "{} ({}+@{})", elem_name, *off, lab.name).unwrap();
+                            writeln!(out, "{} ({}+@{})", elem_name, *off, lab.name()).unwrap();
                         }
                         Token::Label(_lab) => {
                             writeln!(out, "{} align0 resb 0", elem_name).unwrap();

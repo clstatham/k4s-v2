@@ -224,30 +224,24 @@ impl<T: Primitive + BitXor<T, Output = T>> BitXor<Prim<T>> for Prim<T> {
     }
 }
 
-#[derive(Debug, Eq, Hash, Clone, PartialEq, PartialOrd, Ord)]
-pub enum Linkage {
-    Linked(u64), // addr
-    NeedsLinking,
-}
-
 #[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd)]
-pub struct Label {
-    pub name: String,
-    pub linkage: Linkage,
-}
+pub struct Label(String);
 
 impl Display for Label {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "%{}", self.name.replace(['.', '$'], "_"))
+        write!(f, "%{}", self.name())
     }
 }
 
 impl Label {
-    pub fn new_unlinked(name: String) -> Self {
-        Self {
-            name,
-            linkage: Linkage::NeedsLinking,
-        }
+    pub fn new(label: String) -> Self {
+        Self(label)
+    }
+
+    pub fn name(&self) -> String {
+        rustc_demangle::demangle(&self.0)
+            .as_str()
+            .replace(['$', '.'], "_")
     }
 }
 
@@ -321,9 +315,9 @@ impl Display for Token {
             Self::RegOffset(off, reg) => write!(f, "[{}+{}]", *off, reg),
             Self::Register(reg) => write!(f, "{}", reg),
             Self::Label(lab) => write!(f, "{}", lab),
-            Self::Data(dat) => write!(f, "@{}", dat.label.name),
+            Self::Data(dat) => write!(f, "@{}", dat.label.name()),
             Self::LabelOffset(off, lab) => {
-                write!(f, "[{}+@{}]", *off, lab.name)
+                write!(f, "[{}+@{}]", *off, lab.name())
             }
         }
     }

@@ -7,15 +7,14 @@ use nom::{
         streaming::alphanumeric1,
     },
     combinator::{map, opt, recognize, value},
-    error::Error,
     multi::{many0, many1},
     sequence::{preceded, terminated, tuple},
     IResult,
 };
 
 use crate::k4s::{
-    contexts::asm::Header, Data, Instr, InstrSig, InstrSize, Label, Linkage, Opcode, Primitive,
-    Register, Token,
+    contexts::asm::Header, Data, Instr, InstrSig, InstrSize, Label, Opcode, Primitive, Register,
+    Token,
 };
 
 use super::machine::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
@@ -91,7 +90,7 @@ pub fn decimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
 pub fn hexadecimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
     map(
         preceded(
-            alt((tag::<&str, &str, Error<&str>>("0x"), tag("0X"))),
+            alt((tag("0x"), tag("0X"))),
             recognize(many1(terminated(
                 one_of("0123456789abcdefABCDEF"),
                 many0(char('_')),
@@ -195,12 +194,7 @@ pub fn label(i: &str) -> IResult<&str, Token> {
                 recognize(|i| decimal(InstrSize::I64, i)),
             ))),
         )),
-        |res| {
-            Token::Label(Label {
-                name: res.1.join(""),
-                linkage: Linkage::NeedsLinking,
-            })
-        },
+        |res| Token::Label(Label::new(res.1.join(""))),
     )(i)
 }
 
@@ -219,10 +213,7 @@ pub fn data_tag(i: &str) -> IResult<&str, Token> {
         )),
         |(_, label)| {
             Token::Data(Data {
-                label: Label {
-                    name: label.join(""),
-                    linkage: Linkage::NeedsLinking,
-                },
+                label: Label::new(label.join("")),
                 align: 1,
                 data: Vec::new(),
             })
@@ -317,6 +308,7 @@ pub fn data(i: &str) -> IResult<&str, Token> {
                             many1(alt((
                                 alphanumeric1,
                                 space1,
+                                tag("!"),
                                 recognize(tuple((tag("\\x"), hex_digit1))),
                             ))),
                             tag("\""),
@@ -348,10 +340,7 @@ pub fn data(i: &str) -> IResult<&str, Token> {
         )),
         |(_, name, _, align, _, data)| {
             Token::Data(Data {
-                label: Label {
-                    name: name.join(""),
-                    linkage: Linkage::NeedsLinking,
-                },
+                label: Label::new(name.join("")),
                 data,
                 align,
             })
@@ -539,22 +528,22 @@ impl Token {
                 line.extend_from_slice(&(*off as u64).to_bytes());
                 line.extend_from_slice(&[reg.mc_repr()]);
             }
-            // Token::LabelOffset(off, lab) => {
-            //     line.extend_from_slice(&[LITERAL]);
-            //     line.extend_from_slice(&[0; 8]);
-            //     return Some(UnlinkedRef {
-            //         ty: UnlinkedRefType::LabelOffset(off, lab),
-            //         pointee: lab.to_owned(),
-            //         loc: pc + 1,
-            //     });
-            // }
-            Token::LabelOffset(_, _) => todo!(), // these are current not implemented for non static instances
+            Token::LabelOffset(off, lab) => {
+                line.extend_from_slice(&[LITERAL]);
+                line.extend_from_slice(&[0; 8]);
+                return Some(UnlinkedRef {
+                    ty: UnlinkedRefType::LabelOffset(*off),
+                    label: lab.name(),
+                    loc: pc + 1,
+                });
+            }
+            // Token::LabelOffset(_, _) => todo!(), // these are current not implemented for non static instances
             Token::Label(lab) => {
                 line.extend_from_slice(&[LITERAL]);
                 line.extend_from_slice(&[0; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Label,
-                    pointer: lab.to_owned(),
+                    label: lab.name(),
                     loc: pc + 1,
                 });
             }
@@ -568,7 +557,7 @@ impl Token {
                 line.extend_from_slice(&[0; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Label,
-                    pointer: data.label.to_owned(),
+                    label: data.label.name(),
                     loc: pc + 1,
                 });
             }
@@ -599,14 +588,14 @@ impl Opcode {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub enum UnlinkedRefType {
-    Label,                    // single-pointers to locations in memory
-    LabelOffset(i64, String), // double-pointers that must be dereferenced to single-pointers at compile time
+    Label,            // single-pointers to locations in memory
+    LabelOffset(i64), // double-pointers that must be dereferenced to single-pointers at compile time
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct UnlinkedRef {
     pub ty: UnlinkedRefType,
-    pub pointer: Label,
+    pub label: String,
     pub loc: u64,
 }
 

@@ -9,7 +9,7 @@ use rustc_hash::FxHashMap;
 use crate::k4s::{
     contexts::llvm::{pad_for_struct, FunctionContext},
     parsers::llvm::consteval::NameExt,
-    Instr, InstrSize, Label, Linkage, Opcode, Register, Token,
+    Instr, InstrSize, Label, Opcode, Register, Token,
 };
 
 use self::consteval::TypeExt;
@@ -185,6 +185,21 @@ impl Expr {
         self.sequence.push(ExprElem::Comment(comment.to_owned()));
     }
 
+    pub fn referenced_tokens(&self) -> Vec<&Token> {
+        let mut out = Vec::new();
+        self.sequence.iter().for_each(|elem| {
+            if let ExprElem::Instr(instr) = elem {
+                if let Some(arg) = instr.arg0.as_ref() {
+                    out.push(arg);
+                }
+                if let Some(arg) = instr.arg1.as_ref() {
+                    out.push(arg);
+                }
+            }
+        });
+        out
+    }
+
     pub fn parse(
         instr: &Instruction,
         ctx: &mut FunctionContext,
@@ -217,16 +232,30 @@ impl Expr {
         }
         macro_rules! cast_instr {
             ($instr:ident) => {{
-                let ptr = Ssa::parse_operand(&$instr.operand, ctx, types, globals);
+                let src = Ssa::parse_operand(&$instr.operand, ctx, types, globals);
                 let dest = ctx.get_or_push(&$instr.dest, &$instr.to_type, types);
-                let expr = Expr::builder()
+                let mut expr = Expr::builder()
+                    .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
                     .push_instr(Instr::new(
                         Opcode::Mov,
                         dest.instr_size(types),
                         Some(dest.storage().to_owned()),
-                        Some(ptr.storage().to_owned()),
+                        Some(src.storage().to_owned()),
                     ))
                     .build();
+                if let Type::IntegerType { bits: 1 } = $instr.to_type.as_ref() {
+                    expr.push_instr(Instr::new(
+                        Opcode::And,
+                        InstrSize::I8,
+                        Some(dest.storage().to_owned()),
+                        Some(Token::I8(1)),
+                    ));
+                }
+                expr.push_comment(&format!(
+                    "    type of dest {}: {}",
+                    dest.storage(),
+                    dest.ty()
+                ));
                 expr
             }};
         }
@@ -259,6 +288,11 @@ impl Expr {
                         Some(ptr.storage().to_owned()),
                         Some(off),
                     ))
+                    .push_comment(&format!(
+                        "    type of ptr {}: {:?}",
+                        ptr.storage(),
+                        ptr.ty()
+                    ))
                     .build();
 
                 expr
@@ -269,6 +303,7 @@ impl Expr {
                     ctx.get_or_push(&instr.dest, src.pointee_type().as_ref().unwrap(), types);
                 let tmp = ctx.any_register().unwrap();
                 let expr = Expr::builder()
+                    .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
                     .push_instr(Instr::new(
                         Opcode::Mov,
                         InstrSize::I64,
@@ -281,6 +316,11 @@ impl Expr {
                         Some(dest.storage().to_owned()),
                         Some(Token::Addr(Token::Register(tmp).into())),
                     ))
+                    .push_comment(&format!(
+                        "    type of dest {}: {}",
+                        dest.storage(),
+                        dest.ty()
+                    ))
                     .build();
                 ctx.take_back(tmp);
                 expr
@@ -290,6 +330,7 @@ impl Expr {
                 let dest = Ssa::parse_operand(&instr.address, ctx, types, globals);
                 let tmp = ctx.any_register().unwrap();
                 let expr = Expr::builder()
+                    .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
                     .push_instr(Instr::new(
                         Opcode::Mov,
                         dest.instr_size(types),
@@ -301,6 +342,11 @@ impl Expr {
                         src.instr_size(types),
                         Some(Token::Addr(Token::Register(tmp).into())),
                         Some(src.storage().to_owned()),
+                    ))
+                    .push_comment(&format!(
+                        "    type of dest {}: {}",
+                        dest.storage(),
+                        dest.ty()
                     ))
                     .build();
                 ctx.take_back(tmp);
@@ -337,10 +383,7 @@ impl Expr {
                     let func = Ssa::new(
                         fn_name.to_owned().into(),
                         asm.get_type(types),
-                        Token::Label(Label {
-                            name: fn_name,
-                            linkage: Linkage::NeedsLinking,
-                        }),
+                        Token::Label(Label::new(fn_name)),
                         None,
                     );
                     ctx.insert(func.clone());
@@ -526,19 +569,13 @@ impl Expr {
                     .push_instr(Instr::new(
                         jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: true_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(true_lab.clone()))),
                         None,
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: false_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(false_lab.clone()))),
                         None,
                     ))
                     .push_label(true_lab.into())
@@ -551,10 +588,7 @@ impl Expr {
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: end_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(end_lab.clone()))),
                         None,
                     ))
                     .push_label(false_lab.into())
@@ -567,10 +601,7 @@ impl Expr {
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: end_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(end_lab.clone()))),
                         None,
                     ))
                     .push_label(end_lab.into());
@@ -636,19 +667,13 @@ impl Expr {
                     .push_instr(Instr::new(
                         jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: true_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(true_lab.clone()))),
                         None,
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: false_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(false_lab.clone()))),
                         None,
                     ))
                     .push_label(true_lab.into())
@@ -661,10 +686,7 @@ impl Expr {
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: end_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(end_lab.clone()))),
                         None,
                     ))
                     .push_label(false_lab.into())
@@ -677,10 +699,7 @@ impl Expr {
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: end_lab.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(end_lab.clone()))),
                         None,
                     ))
                     .push_label(end_lab.into());
@@ -890,7 +909,7 @@ impl Expr {
                     );
                     let op = Ssa::parse_operand(op, ctx, types, globals);
                     let loc = format!("{}_{}", ctx.name().strip_prefix(), loc.strip_prefix());
-                    let loc = Token::Label(Label::new_unlinked(loc));
+                    let loc = Token::Label(Label::new(loc));
                     ops.push(op);
                     labs.push(lab.to_owned());
 
@@ -903,7 +922,7 @@ impl Expr {
                     expr.push_instr(Instr::new(
                         Opcode::Jeq,
                         InstrSize::I64,
-                        Some(Token::Label(Label::new_unlinked(lab))),
+                        Some(Token::Label(Label::new(lab))),
                         None,
                     ));
                 }
@@ -919,7 +938,7 @@ impl Expr {
                     expr.push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label::new_unlinked(end_lab.to_owned()))),
+                        Some(Token::Label(Label::new(end_lab.to_owned()))),
                         None,
                     ));
                 }
@@ -947,19 +966,13 @@ impl Expr {
                     .push_instr(Instr::new(
                         Opcode::Jne,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: true_dest.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(true_dest.clone()))),
                         None,
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: false_dest.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(false_dest.clone()))),
                         None,
                     ))
                     .push_instr(Instr::new(Opcode::Und, InstrSize::Unsized, None, None))
@@ -973,10 +986,7 @@ impl Expr {
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: end_dest.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(end_dest.clone()))),
                         None,
                     ))
                     .push_label(false_dest.into())
@@ -989,10 +999,7 @@ impl Expr {
                     .push_instr(Instr::new(
                         Opcode::Jmp,
                         InstrSize::I64,
-                        Some(Token::Label(Label {
-                            name: end_dest.clone(),
-                            linkage: Linkage::NeedsLinking,
-                        })),
+                        Some(Token::Label(Label::new(end_dest.clone()))),
                         None,
                     ))
                     .push_label(end_dest.into())
@@ -1019,6 +1026,11 @@ impl Expr {
 
         let tmp_dest_name = ctx.gen_name();
         let tmp_dest = ctx.push(tmp_dest_name, addr.ty(), types);
+        expr.push_comment(&format!(
+            "    type of addr {}: {:?}",
+            addr.storage(),
+            addr.ty()
+        ));
         expr.push_instr(Instr::new(
             Opcode::Mov,
             InstrSize::I64,
@@ -1128,6 +1140,12 @@ impl Expr {
             InstrSize::I64,
             Some(dest.storage().to_owned()),
             Some(tmp_dest.storage().to_owned()),
+        ));
+
+        expr.push_comment(&format!(
+            "    type of dest {}: {:?}",
+            dest.storage(),
+            dest.ty()
         ));
 
         (expr, dest)

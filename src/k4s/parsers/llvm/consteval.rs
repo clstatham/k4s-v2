@@ -45,7 +45,7 @@ impl Ssa {
                 globals
                     .get(&ref_name.to_owned().into())
                     .map(|ssa| ssa.storage().to_owned())
-                    .unwrap_or_else(|| Token::Label(Label::new_unlinked(ref_name.to_owned()))),
+                    .unwrap_or_else(|| Token::Label(Label::new(ref_name.to_owned()))),
                 // Token::LabelOffset(0, Label::new_unlinked(ref_name.to_owned())),
                 None,
             ),
@@ -66,7 +66,7 @@ impl Ssa {
                     name.to_owned(),
                     ty,
                     Token::Data(Data {
-                        label: Label::new_unlinked(
+                        label: Label::new(
                             str_name
                                 .as_ref()
                                 .unwrap_or(&name.strip_prefix())
@@ -88,7 +88,7 @@ impl Ssa {
             } => {
                 let storage = match element_type.as_ref() {
                     Type::IntegerType { bits: 8 } => Token::Data(Data {
-                        label: Label::new_unlinked(name.strip_prefix()),
+                        label: Label::new(name.strip_prefix()),
                         align: 1,
                         data: elements
                             .iter()
@@ -110,7 +110,7 @@ impl Ssa {
                 name.to_owned(),
                 agg.to_owned(),
                 Token::Data(Data {
-                    label: Label::new_unlinked(name.strip_prefix()),
+                    label: Label::new(name.strip_prefix()),
                     align: 0,
                     data: vec![0u8; agg.total_size_in_bytes(types)],
                 }),
@@ -302,24 +302,25 @@ impl TypeExt for Type {
                 _ => todo!("{:?}", precision),
             }
         } else {
-            InstrSize::from_integer_bits(self.get_type(types).total_size_in_bytes(types) as u32 * 8)
-                .unwrap_or_else(|| match self.get_type(types).as_ref() {
-                    Type::ArrayType { .. } => InstrSize::I64,
-                    Type::StructType { .. } => InstrSize::I64,
-                    Type::IntegerType { bits: 24 } => InstrSize::I32,
-                    Type::IntegerType { bits: 48 } => InstrSize::I64,
-                    Type::IntegerType { bits: 56 } => InstrSize::I64,
-                    Type::IntegerType { bits: 96 } => InstrSize::I128,
-                    Type::NamedStructType { name } => {
-                        let struc = types.named_struct_def(name).unwrap();
-                        if let NamedStructDef::Defined(ty) = struc {
-                            ty.instr_size(types)
-                        } else {
-                            todo!("opaque structs")
-                        }
+            match self.get_type(types).as_ref() {
+                Type::ArrayType { .. } => InstrSize::I64,
+                Type::StructType { .. } => InstrSize::I64,
+                Type::IntegerType { bits: 24 } => InstrSize::I32,
+                Type::IntegerType { bits: 48 } => InstrSize::I64,
+                Type::IntegerType { bits: 56 } => InstrSize::I64,
+                Type::IntegerType { bits: 96 } => InstrSize::I128,
+                Type::NamedStructType { name } => {
+                    let struc = types.named_struct_def(name).unwrap();
+                    if let NamedStructDef::Defined(ty) = struc {
+                        ty.instr_size(types)
+                    } else {
+                        todo!("opaque structs")
                     }
-                    ty => todo!("{:?}", ty),
-                })
+                }
+                Type::PointerType { .. } => InstrSize::I64,
+                Type::IntegerType { bits } => InstrSize::from_integer_bits(*bits).unwrap(),
+                ty => todo!("{:?}", ty),
+            }
         }
     }
 }

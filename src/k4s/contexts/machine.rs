@@ -219,6 +219,7 @@ pub struct MachineContext {
     pub output_history: String,
     pub stack_frame: Vec<(u64, u64)>,
     pub error: Option<String>,
+    pub call_depth: usize,
 }
 
 impl MachineContext {
@@ -265,6 +266,7 @@ impl MachineContext {
             stack_frame: Vec::new(),
             output_history: String::new(),
             error: None,
+            call_depth: 0,
         })
     }
 
@@ -291,7 +293,7 @@ impl MachineContext {
             log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
         }
         
-        self.instr_history.push(format!("{:016x} --> {}", pc, instr.display_with_symbols(&self.debug_symbols)));
+        self.instr_history.push(format!("{}{}", "    ".repeat(self.call_depth), instr.display_with_symbols(&self.debug_symbols)));
         self.stack_frame = {
             let bp = self.regs.bp - self.regs.bp % 8;
             let sp = self.regs.sp - self.regs.sp % 8;
@@ -599,10 +601,12 @@ impl MachineContext {
             Opcode::Call => {
                 self.push(Token::I64(self.regs.pc + instr.mc_size_in_bytes() as u64)).context("Error pushing return addr in `call` instruction")?;
                 self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                self.call_depth += 1;
                 return Ok(MachineState::ContDontUpdatePc);
             }
             Opcode::Ret => {
                 self.regs.pc = self.pop(InstrSize::I64)?.as_integer().unwrap();
+                self.call_depth -= 1;
                 return Ok(MachineState::ContDontUpdatePc);
             }
             Opcode::Cmp => {
