@@ -235,7 +235,7 @@ impl Expr {
                 let src = Ssa::parse_operand(&$instr.operand, ctx, types, globals);
                 let dest = ctx.get_or_push(&$instr.dest, &$instr.to_type, types);
                 let mut expr = Expr::builder()
-                    .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
+                    // .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
                     .push_instr(Instr::new(
                         Opcode::Mov,
                         dest.instr_size(types),
@@ -251,11 +251,11 @@ impl Expr {
                         Some(Token::I8(1)),
                     ));
                 }
-                expr.push_comment(&format!(
-                    "    type of dest {}: {}",
-                    dest.storage(),
-                    dest.ty()
-                ));
+                // expr.push_comment(&format!(
+                //     "    type of dest {}: {}",
+                //     dest.storage(),
+                //     dest.ty()
+                // ));
                 expr
             }};
         }
@@ -288,11 +288,11 @@ impl Expr {
                         Some(ptr.storage().to_owned()),
                         Some(off),
                     ))
-                    .push_comment(&format!(
-                        "    type of ptr {}: {:?}",
-                        ptr.storage(),
-                        ptr.ty()
-                    ))
+                    // .push_comment(&format!(
+                    //     "    type of ptr {}: {:?}",
+                    //     ptr.storage(),
+                    //     ptr.ty()
+                    // ))
                     .build();
 
                 expr
@@ -303,7 +303,7 @@ impl Expr {
                     ctx.get_or_push(&instr.dest, src.pointee_type().as_ref().unwrap(), types);
                 let tmp = ctx.any_register().unwrap();
                 let expr = Expr::builder()
-                    .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
+                    // .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
                     .push_instr(Instr::new(
                         Opcode::Mov,
                         InstrSize::I64,
@@ -316,11 +316,11 @@ impl Expr {
                         Some(dest.storage().to_owned()),
                         Some(Token::Addr(Token::Register(tmp).into())),
                     ))
-                    .push_comment(&format!(
-                        "    type of dest {}: {}",
-                        dest.storage(),
-                        dest.ty()
-                    ))
+                    // .push_comment(&format!(
+                    //     "    type of dest {}: {}",
+                    //     dest.storage(),
+                    //     dest.ty()
+                    // ))
                     .build();
                 ctx.take_back(tmp);
                 expr
@@ -330,7 +330,7 @@ impl Expr {
                 let dest = Ssa::parse_operand(&instr.address, ctx, types, globals);
                 let tmp = ctx.any_register().unwrap();
                 let expr = Expr::builder()
-                    .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
+                    // .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
                     .push_instr(Instr::new(
                         Opcode::Mov,
                         dest.instr_size(types),
@@ -343,11 +343,11 @@ impl Expr {
                         Some(Token::Addr(Token::Register(tmp).into())),
                         Some(src.storage().to_owned()),
                     ))
-                    .push_comment(&format!(
-                        "    type of dest {}: {}",
-                        dest.storage(),
-                        dest.ty()
-                    ))
+                    // .push_comment(&format!(
+                    //     "    type of dest {}: {}",
+                    //     dest.storage(),
+                    //     dest.ty()
+                    // ))
                     .build();
                 ctx.take_back(tmp);
                 expr
@@ -961,7 +961,7 @@ impl Expr {
                         Opcode::Cmp,
                         cond.instr_size(types),
                         Some(cond.storage().to_owned()),
-                        Some(Token::Register(Register::Rz)),
+                        Some(Token::from_integer_size(0, cond.instr_size(types)).unwrap()),
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jne,
@@ -1026,11 +1026,11 @@ impl Expr {
 
         let tmp_dest_name = ctx.gen_name();
         let tmp_dest = ctx.push(tmp_dest_name, addr.ty(), types);
-        expr.push_comment(&format!(
-            "    type of addr {}: {:?}",
-            addr.storage(),
-            addr.ty()
-        ));
+        // expr.push_comment(&format!(
+        //     "    type of addr {}: {:?}",
+        //     addr.storage(),
+        //     addr.ty()
+        // ));
         expr.push_instr(Instr::new(
             Opcode::Mov,
             InstrSize::I64,
@@ -1142,11 +1142,11 @@ impl Expr {
             Some(tmp_dest.storage().to_owned()),
         ));
 
-        expr.push_comment(&format!(
-            "    type of dest {}: {:?}",
-            dest.storage(),
-            dest.ty()
-        ));
+        // expr.push_comment(&format!(
+        //     "    type of dest {}: {:?}",
+        //     dest.storage(),
+        //     dest.ty()
+        // ));
 
         (expr, dest)
     }

@@ -112,7 +112,7 @@ impl Ssa {
                 Token::Data(Data {
                     label: Label::new(name.strip_prefix()),
                     align: 0,
-                    data: vec![0u8; agg.total_size_in_bytes(types)],
+                    data: vec![0; agg.total_size_in_bytes(types)],
                 }),
                 Some(con.to_owned()),
             ),

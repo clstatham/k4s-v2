@@ -334,10 +334,9 @@ macro_rules! token_arith_impl {
                 (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
                 (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
                 (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
-                _ => Err(Error::msg(format!(
-                    "token types must match and be numeric for arithmetic operations\nmismatched types: {:?} {:?}",
-                    self, rhs
-                ))),
+                _ => Err(Error::msg(
+                    "token types must match and be numeric for arithmetic operations",
+                )),
             }
         }
     };
@@ -352,8 +351,6 @@ macro_rules! token_int_arith_impl {
                 (Self::I32(a), Self::I32(b)) => Ok(Self::I32(a.$op(b))),
                 (Self::I64(a), Self::I64(b)) => Ok(Self::I64(a.$op(b))),
                 (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
-                // (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
-                // (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
                 _ => Err(Error::msg(
                     "token types must match and be integers for integer arithmetic operations",
                 )),
@@ -919,26 +916,6 @@ impl Instr {
     }
 }
 
-pub const ALL_REGS: &[Register] = &[
-    Register::Rz,
-    Register::Ra,
-    Register::Rb,
-    Register::Rc,
-    Register::Rd,
-    Register::Re,
-    Register::Rf,
-    Register::Rg,
-    Register::Rh,
-    Register::Ri,
-    Register::Rj,
-    Register::Rk,
-    Register::Rl,
-    Register::Bp,
-    Register::Sp,
-    Register::Pc,
-    Register::Fl,
-];
-
 pub const GP_REGS: &[Register] = &[
     Register::Rb,
     Register::Rc,
@@ -956,7 +933,8 @@ pub const GP_REGS: &[Register] = &[
 #[derive(Debug, Clone, Copy, Hash, PartialEq, PartialOrd, Eq, Ord)]
 #[repr(u8)]
 pub enum Register {
-    Rz = 0,
+    R0 = 1,
+    R1,
     Ra,
     Rb,
     Rc,
@@ -973,6 +951,7 @@ pub enum Register {
     Sp,
     Pc,
     Fl,
+    Pt,
 }
 
 impl Register {
@@ -984,7 +963,8 @@ impl Register {
 impl Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::Rz => "rz",
+            Self::R0 => "r0",
+            Self::R1 => "r1",
             Self::Ra => "ra",
             Self::Rb => "rb",
             Self::Rc => "rc",
@@ -1001,6 +981,7 @@ impl Display for Register {
             Self::Sp => "sp",
             Self::Pc => "pc",
             Self::Fl => "fl",
+            Self::Pt => "pt",
         };
         write!(f, "{}", s)
     }

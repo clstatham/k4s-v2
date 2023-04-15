@@ -374,7 +374,7 @@ impl LlvmContext {
                                 Opcode::Cmp,
                                 cond.instr_size(&types),
                                 Some(cond.storage().to_owned()),
-                                Some(Token::Register(Register::Rz)),
+                                Some(Token::from_integer_size(0, cond.instr_size(&types)).unwrap()),
                             ))
                             .push_instr(Instr::new(
                                 Opcode::Jne,
@@ -579,7 +579,7 @@ impl LlvmContext {
         } = agg.as_ref()
         {
             // need to insert each element as a data tag with label pointers to their beginnings
-            writeln!(out, "@{} align0 resb 0", agg_name.strip_prefix()).unwrap();
+            writeln!(out, "@{} align8 resb 0", agg_name.strip_prefix()).unwrap();
             let mut it = values.iter().enumerate().peekable();
             let mut total = 0;
             while let Some((i, elem)) = it.next() {
@@ -596,21 +596,26 @@ impl LlvmContext {
                         Token::I128(_) => 16,
                         _ => unreachable!(),
                     };
+                    total += total % align;
                     writeln!(out, "{} align{} ${}", elem_name, align, int).unwrap();
                 } else {
                     match elem.storage() {
                         Token::Data(data) => {
-                            write!(out, "{} align1 \"", elem_name).unwrap();
+                            write!(out, "{} align8 \"", elem_name).unwrap();
                             for byte in data.data.iter() {
                                 write!(out, "\\x{:02x}", *byte).unwrap();
                             }
                             writeln!(out, "\"").unwrap();
+                            total += total % 8;
                         }
                         Token::LabelOffset(off, lab) => {
-                            writeln!(out, "{} ({}+@{})", elem_name, *off, lab.name()).unwrap();
+                            writeln!(out, "{} align8 ({}+@{})", elem_name, *off, lab.name())
+                                .unwrap();
+                            total += total % 8;
                         }
                         Token::Label(_lab) => {
-                            writeln!(out, "{} align0 resb 0", elem_name).unwrap();
+                            writeln!(out, "{} align8 resb 0", elem_name).unwrap();
+                            total += total % 8;
                         }
                         _ => todo!("{:?}", elem.storage()),
                     }
@@ -656,7 +661,7 @@ impl LlvmContext {
                     }
                 })
                 .collect::<Vec<u8>>();
-            write!(out, "@{} align1 \"", agg_name.strip_prefix()).unwrap();
+            write!(out, "@{} align8 \"", agg_name.strip_prefix()).unwrap();
             for elem in data {
                 write!(out, "\\x{:02x}", elem).unwrap();
             }

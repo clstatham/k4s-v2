@@ -1,4 +1,9 @@
-!ent %_start @ 0x1000
+!ent %_start @ 0x40000000
+
+@pt4 align4096 resb 4096
+@pt3 align4096 resb 4096
+@pt2 align4096 resb 4096
+@pt1_0 align4096 resb 0x10000
 
 %_start
     call i64 %kernel_main
@@ -18,7 +23,7 @@
     push i64 rb
     mov i64 rb rg
 %printstrln_asm_loop
-    cmp i8 [rb] rz
+    cmp i8 [rb] $0
     jeq i64 %printstrln_asm_ret
     printc i8 [rb]
     add i64 rb $1
@@ -37,7 +42,7 @@
     push i64 rb
     push i64 rc
     mov i64 rb rg
-    mov i64 rc rz
+    mov i64 rc $0
 %printptrln_asm_loop
     cmp i64 rc rh
     jeq i64 %prinptrln_asm_ret
@@ -64,7 +69,7 @@
     mov i64 rb rg ; dest
     mov i64 rd rh ; src
     ; ri = len
-    mov i64 rc rz
+    mov i64 rc $0
 %llvm_memcpy_p0i8_p0i8_i64_loop
     cmp i64 rc ri
     jeq i64 %llvm_memcpy_p0i8_p0i8_i64_end
@@ -86,7 +91,7 @@
     push i64 rc
     mov i64 rb rg ; dest
     ; ri = len
-    mov i64 rc rz
+    mov i64 rc $0
 %llvm_memset_p0i8_i64_loop
     cmp i64 rc ri
     jeq i64 %llvm_memset_p0i8_i64_end
@@ -101,7 +106,7 @@
     ret
 
 %llvm_assume
-    cmp i8 rg rz
+    cmp i8 rg $0
     jne i64 %llvm_assume_passed
     und
 %llvm_assume_passed

@@ -104,7 +104,8 @@ pub fn parse_register(mc: &[u8]) -> IResult<&[u8], Token> {
     // i could've done this using `Register::parse_mc`, but oh well, i already typed it all out
     map(
         alt((
-            value(Register::Rz, |mc| Register::Rz.match_mc(mc)),
+            value(Register::R0, |mc| Register::R0.match_mc(mc)),
+            value(Register::R1, |mc| Register::R1.match_mc(mc)),
             value(Register::Ra, |mc| Register::Ra.match_mc(mc)),
             value(Register::Rb, |mc| Register::Rb.match_mc(mc)),
             value(Register::Rc, |mc| Register::Rc.match_mc(mc)),
@@ -121,6 +122,7 @@ pub fn parse_register(mc: &[u8]) -> IResult<&[u8], Token> {
             value(Register::Sp, |mc| Register::Sp.match_mc(mc)),
             value(Register::Pc, |mc| Register::Pc.match_mc(mc)),
             value(Register::Fl, |mc| Register::Fl.match_mc(mc)),
+            value(Register::Pt, |mc| Register::Pt.match_mc(mc)),
         )),
         Token::Register,
     )(mc)

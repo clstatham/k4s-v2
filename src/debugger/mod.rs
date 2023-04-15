@@ -7,7 +7,10 @@ use std::{
 
 use anyhow::Result;
 
-use crate::k4s::contexts::machine::{MachineContext, MachineState};
+use crate::{
+    k4s::contexts::machine::{MachineContext, MachineState},
+    TWO_GIGS,
+};
 
 slint::slint! {
     import { Button, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
@@ -92,7 +95,7 @@ pub fn debugger_main(bin_path: PathBuf) -> Result<()> {
         file.read_to_end(&mut buf)?;
         buf
     };
-    let emulator = MachineContext::new(&program, 0x1000000)?;
+    let emulator = MachineContext::new(&program, TWO_GIGS)?;
     let emulator = Arc::new(Mutex::new(emulator));
 
     let dbgr = Debugger::new()?;

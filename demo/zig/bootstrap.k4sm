@@ -1,0 +1,16 @@
+; header tag: entry point label and address
+!ent %_start @ 0x1000
+
+; data tag: pointer to a static value in memory
+@theanswer align8 $42
+
+; entry point function
+%_start ; label
+    mov i64 rg $58 ; number `58` -> `rg` register, treat as 64 bit integer
+    mov i64 rh @theanswer ; pointer to static number `42` above -> `rh` register
+    call i64 %demo ; call external function from Zig code (all labels are just 64 bit addresses)
+    printi i64 ra ; return value will be in `ra` register; print it in the emulator
+    hlt ; halt execution of the emulator
+
+%llvm_dbg_value
+    ret

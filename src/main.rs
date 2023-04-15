@@ -41,11 +41,14 @@ enum Commands {
     },
 }
 
+pub const TWO_GIGS: usize = 1024 * 1024 * 1024 * 2;
+
 fn run(bin_path: PathBuf) -> Result<()> {
     let mut program = vec![];
     let mut file = File::open(bin_path)?;
     file.read_to_end(&mut program)?;
-    let mut machine = MachineContext::new(&program, 0x1000000)?;
+
+    let mut machine = MachineContext::new(&program, TWO_GIGS)?;
     machine.run_until_hlt()?;
     Ok(())
 }

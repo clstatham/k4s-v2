@@ -110,7 +110,8 @@ pub fn hexadecimal(size: InstrSize, input: &str) -> IResult<&str, Token> {
 fn register(i: &str) -> IResult<&str, Token> {
     map(
         alt((
-            value(Register::Rz, tag("rz")),
+            value(Register::R0, tag("r0")),
+            value(Register::R1, tag("r1")),
             value(Register::Ra, tag("ra")),
             value(Register::Rb, tag("rb")),
             value(Register::Rc, tag("rc")),
@@ -127,6 +128,7 @@ fn register(i: &str) -> IResult<&str, Token> {
             value(Register::Sp, tag("sp")),
             value(Register::Pc, tag("pc")),
             value(Register::Fl, tag("fl")),
+            value(Register::Pt, tag("pt")),
         )),
         Token::Register,
     )(i)
@@ -226,7 +228,7 @@ pub fn lab_offset_const(i: &str) -> IResult<&str, (Label, Token)> {
         tuple((
             data_tag,
             space1,
-            tag("("),
+            tag("align8 ("),
             opt(tag("-")),
             |i| decimal(InstrSize::I64, i),
             tag("+"),
@@ -259,30 +261,23 @@ pub fn data(i: &str) -> IResult<&str, Token> {
     map(
         tuple((
             tag("@"),
-            many1(alt((
-                alpha1,
-                tag("_"),
-                tag("."),
-                tag("$"),
-                tag("-"),
-                recognize(|i| decimal(InstrSize::I64, i)),
-            ))),
+            many1(alt((alphanumeric1, tag("_"), tag("."), tag("$"), tag("-")))),
             space1,
             alt((
+                value(1024, tag("align1024")),
+                value(2048, tag("align2048")),
+                value(4096, tag("align4096")),
+                value(128, tag("align128")),
+                value(256, tag("align256")),
+                value(512, tag("align512")),
+                value(16, tag("align16")),
+                value(32, tag("align32")),
+                value(64, tag("align64")),
                 value(0, tag("align0")),
                 value(1, tag("align1")),
                 value(2, tag("align2")),
                 value(4, tag("align4")),
                 value(8, tag("align8")),
-                value(16, tag("align16")),
-                value(32, tag("align32")),
-                value(64, tag("align64")),
-                value(128, tag("align128")),
-                value(256, tag("align256")),
-                value(512, tag("align512")),
-                value(1024, tag("align1024")),
-                value(2048, tag("align2048")),
-                value(4096, tag("align4096")),
             )),
             space1,
             alt((
@@ -299,7 +294,7 @@ pub fn data(i: &str) -> IResult<&str, Token> {
                             |i| hexadecimal(InstrSize::I64, i),
                         )),
                     )),
-                    |(_, _, tok)| vec![0u8; tok.as_integer::<u64>().unwrap() as usize],
+                    |(_, _, tok)| vec![0x00; tok.as_integer::<u64>().unwrap() as usize],
                 ),
                 map(
                     preceded(
@@ -530,17 +525,16 @@ impl Token {
             }
             Token::LabelOffset(off, lab) => {
                 line.extend_from_slice(&[LITERAL]);
-                line.extend_from_slice(&[0; 8]);
+                line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::LabelOffset(*off),
                     label: lab.name(),
                     loc: pc + 1,
                 });
             }
-            // Token::LabelOffset(_, _) => todo!(), // these are current not implemented for non static instances
             Token::Label(lab) => {
                 line.extend_from_slice(&[LITERAL]);
-                line.extend_from_slice(&[0; 8]);
+                line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Label,
                     label: lab.name(),
@@ -554,7 +548,7 @@ impl Token {
             Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
             Token::Data(data) => {
                 line.extend_from_slice(&[LITERAL]);
-                line.extend_from_slice(&[0; 8]);
+                line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Label,
                     label: data.label.name(),

@@ -11,9 +11,12 @@ use crate::k4s::{
 bitflags::bitflags! {
     #[derive(Debug, Clone, Default)]
     pub struct Fl: u64 {
-        const EQ = 0b1;
-        const GT = 0b10;
-        const ORD = 0b100;
+        const EQ = 1 << 0;
+        const GT = 1 << 1;
+        const ORD = 1 << 2;
+        const RESERVED_0 = 1 << 3;
+        const RESERVED_1 = 1 << 4;
+        const PT_ENABLED = 1 << 5;
     }
 }
 
@@ -29,6 +32,9 @@ impl Fl {
     }
     pub fn ord(&self) -> bool {
         self.intersects(Self::ORD)
+    }
+    pub fn pt_enabled(&self) -> bool {
+        self.intersects(Self::PT_ENABLED)
     }
 
     pub fn cmp(&mut self, a: &Token, b: &Token) {
@@ -92,12 +98,14 @@ pub struct Regs {
     pub sp: u64,
     pub pc: u64,
     pub fl: Fl,
+    pub pt: u64,
 }
 
 impl Regs {
     pub fn get(&self, reg: Register, size: InstrSize) -> Result<Token> {
         match reg {
-            Register::Rz => Token::from_integer_size(0u8, size),
+            Register::R0 => Token::from_integer_size(0u8, size),
+            Register::R1 => Token::from_integer_size(1u8, size),
             Register::Ra => Token::from_integer_size(self.ra, size),
             Register::Rb => Token::from_integer_size(self.rb, size),
             Register::Rc => Token::from_integer_size(self.rc, size),
@@ -114,12 +122,14 @@ impl Regs {
             Register::Sp => Token::from_integer_size(self.sp, size),
             Register::Pc => Token::from_integer_size(self.pc, size),
             Register::Fl => Token::from_integer_size(self.fl.bits(), size),
+            Register::Pt => Token::from_integer_size(self.pt, size),
         }.ok_or(Error::msg(format!("Error interpreting {} as {}", reg, size)))
     }
 
     pub fn set(&mut self, reg: Register, val: Token) -> Result<()> {
         match reg {
-            Register::Rz => return Err(Error::msg("Attempt to write to RZ register")),
+            Register::R0 => return Err(Error::msg("Attempt to write to R0 register")),
+            Register::R1 => return Err(Error::msg("Attempt to write to R1 register")),
             Register::Ra => self.ra = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
             Register::Rb => self.rb = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
             Register::Rc => self.rc = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
@@ -136,6 +146,7 @@ impl Regs {
             Register::Sp => self.sp = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
             Register::Pc => self.pc = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
             Register::Fl => self.fl = Fl::from_bits_truncate(val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?),
+            Register::Pt => self.pt = val.as_integer().ok_or(Error::msg(format!("Error interpreting {} as {}", val, InstrSize::I64)))?,
         }
         Ok(())
     }
@@ -224,7 +235,7 @@ pub struct MachineContext {
 
 impl MachineContext {
     pub fn new(program: &[u8], mem_size: usize) -> Result<MachineContext> {
-        let mut ram = vec![0u8; mem_size].into_boxed_slice();
+        let mut ram = vec![0x00; mem_size].into_boxed_slice();
         let mut regs = Regs::default();
         if &program[..tags::HEADER_MAGIC.len()] != tags::HEADER_MAGIC {
             return Err(Error::msg(format!(
@@ -284,12 +295,12 @@ impl MachineContext {
         log::debug!("\n{}", self.regs);
         if let Some(tok) = &instr.arg0 {
             let tok_eval = self
-                .eval_token(tok.to_owned(), InstrSize::I64).unwrap_or(Token::Unknown);
+                .eval_token(tok.to_owned(), instr.size).unwrap_or(Token::Unknown);
             log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
         }
         if let Some(tok) = &instr.arg1 {
             let tok_eval = self
-                .eval_token(tok.to_owned(), InstrSize::I64).unwrap_or(Token::Unknown);
+                .eval_token(tok.to_owned(), instr.size).unwrap_or(Token::Unknown);
             log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
         }
         
