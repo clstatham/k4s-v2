@@ -1,0 +1,21 @@
+%kernel_main
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $0
+    jmp i64 %kernel_main_Entry
+%kernel_main_Entry
+;
+;tail call @printi(i64 69696969)
+    mov i64 rg $69696969
+    call i64 %printi
+;
+;tail call @hlt()
+    call i64 %hlt
+    mov i64 rb %kernel_main_Entry
+;unreachable
+    und 
+%kernel_main_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+

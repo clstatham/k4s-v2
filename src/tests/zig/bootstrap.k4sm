@@ -1,6 +1,7 @@
 !ent %_start @ 0x100000
-!region 0x2200000 > 0x200000 : %start_high %kernel_main
-; !region 0x100000 > 0x100000 : %_start %bootloader_main
+!region 0x100000 > 0x100000 : %_start %bootloader_main %boot_printi  %boot_printc  %boot_hlt  %boot_und %boot_write_pt
+!region 0x80200000 > 0x200000 : %start_high %kernel_main %printi %printc %hlt %und
+
 %_start
     mov i64 sp $0x400000
     mov i64 bp sp
@@ -8,15 +9,21 @@
     hlt
     und
 
-
-%write_pt
+%boot_write_pt
     mov i64 pt rg
     add i64 sp $8 ; pop return addr of %write_pt
-    or i64 sp $0x2000000
+    or i64 sp $0x80000000
     mov i64 rb %start_high
-    ; or i64 rb $0x2000000
+    ; or i64 rb $0x80000000
     printi i64 rb
     enpt i64 rb
+    ret ; this doesn't actually happen, but it makes the assembler happy lmao
+
+%start_high
+    printi i64 $42069
+    call i64 %kernel_main
+    hlt
+    und
 
 %llvm_dbg_value
     ret
@@ -155,6 +162,22 @@
     ret
 
 
+%boot_printi
+    printi i64 rg
+    ret
+
+%boot_printc
+    printc i8 rg
+    ret
+
+%boot_hlt
+    hlt
+    und
+
+%boot_und
+    und
+    ret
+
 %printi
     printi i64 rg
     ret
@@ -169,10 +192,4 @@
 
 %und
     und
-
-
-%start_high
-    printi i64 $696969
-    call i64 %kernel_main
-    hlt
-    und
+    ret

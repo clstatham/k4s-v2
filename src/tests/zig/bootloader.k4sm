@@ -10,43 +10,6 @@
 @global_3_elem0 align8 (0+@global_2)
 @global_3_elem1 align8 $23
 @global_4 align8 "\x45\x6e\x61\x62\x6c\x69\x6e\x67\x20\x70\x61\x67\x69\x6e\x67\x2e\x00"
-%PageTable_1__init
-    push i64 bp
-    mov i64 bp sp
-    sub i64 sp $56
-    mov i64 [-8+bp] rg
-    mov i64 [-16+bp] rh
-    jmp i64 %PageTable_1__init_Entry
-%PageTable_1__init_Entry
-;
-;%2 = bitcast %PageTable(1)* %0 to [512 x %Frame]**
-    mov i64 [-24+bp] [-8+bp]
-;
-;%3 = bitcast %Frame* %1 to i64*
-    mov i64 [-32+bp] [-16+bp]
-;
-;%4 = load i64* %3, align 1
-    mov i64 rc [-32+bp]
-    mov i64 [-40+bp] [rc]
-;
-;%5 = and i64 %4, i64 4503599627366400
-    mov i64 [-48+bp] [-40+bp]
-    and i64 [-48+bp] $4503599627366400
-;
-;%6 = inttoptr i64 %5 to [512 x %Frame]*
-    mov i64 [-56+bp] [-48+bp]
-;
-;store [512 x %Frame]* %6, [512 x %Frame]** %2, align 1
-    mov i64 rc [-24+bp]
-    mov i64 [rc] [-56+bp]
-    mov i64 rb %PageTable_1__init_Entry
-;ret void
-    jmp i64 %PageTable_1__init_ret
-%PageTable_1__init_ret
-    mov i64 sp bp
-    pop i64 bp
-    ret 
-
 %map_to
     push i64 bp
     mov i64 bp sp
@@ -236,23 +199,39 @@
     pop i64 bp
     ret 
 
-%kernel_main
+%PageTable_1__init
     push i64 bp
     mov i64 bp sp
-    sub i64 sp $0
-    jmp i64 %kernel_main_Entry
-%kernel_main_Entry
+    sub i64 sp $56
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    jmp i64 %PageTable_1__init_Entry
+%PageTable_1__init_Entry
 ;
-;tail call @printi(i64 42069)
-    mov i64 rg $42069
-    call i64 %printi
+;%2 = bitcast %PageTable(1)* %0 to [512 x %Frame]**
+    mov i64 [-24+bp] [-8+bp]
 ;
-;tail call @hlt()
-    call i64 %hlt
-    mov i64 rb %kernel_main_Entry
-;unreachable
-    und 
-%kernel_main_ret
+;%3 = bitcast %Frame* %1 to i64*
+    mov i64 [-32+bp] [-16+bp]
+;
+;%4 = load i64* %3, align 1
+    mov i64 rc [-32+bp]
+    mov i64 [-40+bp] [rc]
+;
+;%5 = and i64 %4, i64 4503599627366400
+    mov i64 [-48+bp] [-40+bp]
+    and i64 [-48+bp] $4503599627366400
+;
+;%6 = inttoptr i64 %5 to [512 x %Frame]*
+    mov i64 [-56+bp] [-48+bp]
+;
+;store [512 x %Frame]* %6, [512 x %Frame]** %2, align 1
+    mov i64 rc [-24+bp]
+    mov i64 [rc] [-56+bp]
+    mov i64 rb %PageTable_1__init_Entry
+;ret void
+    jmp i64 %PageTable_1__init_ret
+%PageTable_1__init_ret
     mov i64 sp bp
     pop i64 bp
     ret 
@@ -541,9 +520,9 @@
     mov i64 rc [-88+bp]
     mov i8 [-96+bp] [rc]
 ;
-;tail call @printc(i8 %5)
+;tail call @boot_printc(i8 %5)
     mov i8 rg [-96+bp]
-    call i64 %printc
+    call i64 %boot_printc
 ;
 ;%6 = add i64 %i.0, i64 1
     mov i64 [-48+bp] [-40+bp]
@@ -553,9 +532,9 @@
     jmp i64 %println_ForCond
 %println_ForEnd
 ;
-;tail call @printc(i8 10)
+;tail call @boot_printc(i8 10)
     mov i8 rg $10
-    call i64 %printc
+    call i64 %boot_printc
     mov i64 rb %println_ForEnd
 ;ret void
     jmp i64 %println_ret
@@ -588,9 +567,9 @@
     mov i64 rg @global_1
     call i64 %println
 ;
-;tail call @printi(i64 %0)
+;tail call @boot_printi(i64 %0)
     mov i64 rg [-8+bp]
-    call i64 %printi
+    call i64 %boot_printi
 ;
 ;tail call @println(%[]u8* @global_3)
     mov i64 rg @global_3
@@ -619,9 +598,9 @@
     mov i64 [-88+bp] [-72+bp]
     and i64 [-88+bp] $4503599627366400
 ;
-;tail call @printi(i64 %4)
+;tail call @boot_printi(i64 %4)
     mov i64 rg [-88+bp]
-    call i64 %printi
+    call i64 %boot_printi
 ;
 ;call @setup_paging(%PageTable(4)* %page_table, %Frame* %pt4_frame, %FrameAllocator* %frame_alloc)
     mov i64 rg [-56+bp]
@@ -633,13 +612,134 @@
     mov i64 rg @global_5
     call i64 %println
 ;
-;tail call @write_pt(i64 %4)
+;tail call @boot_write_pt(i64 %4)
     mov i64 rg [-88+bp]
-    call i64 %write_pt
+    call i64 %boot_write_pt
     mov i64 rb %bootloader_main_Entry
 ;unreachable
     und 
 %bootloader_main_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%setup_paging
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $152
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    jmp i64 %setup_paging_Entry
+%setup_paging_Entry
+;
+;%pt = alloca i64, align 8
+    mov i64 [-40+bp] bp
+    sub i64 [-40+bp] $32
+;
+;%3 = alloca %VirtAddr, align 8
+    mov i64 [-56+bp] bp
+    sub i64 [-56+bp] $48
+;
+;%4 = alloca %Frame, align 8
+    mov i64 [-72+bp] bp
+    sub i64 [-72+bp] $64
+;
+;%5 = bitcast i64* %pt to %PageTable(1)*
+    mov i64 [-80+bp] [-40+bp]
+;
+;call @PageTable(1).init(%PageTable(1)* %5, %Frame* %1)
+    mov i64 rg [-80+bp]
+    mov i64 rh [-16+bp]
+    call i64 %PageTable_1__init
+    mov i64 rb %setup_paging_Entry
+;br label %WhileCond
+    jmp i64 %setup_paging_WhileCond
+%setup_paging_WhileCond
+;
+;%frame.0 = phi i64 [ i64 4096, %Entry ], [ i64 %11, %WhileBody ]
+    cmp i64 rb %setup_paging_Entry
+    jeq i64 %setup_paging_phi_10000008_Entry
+    cmp i64 rb %setup_paging_WhileBody
+    jeq i64 %setup_paging_phi_10000010_WhileBody
+    und 
+%setup_paging_phi_10000008_Entry
+    mov i64 [-88+bp] $4096
+    jmp i64 %setup_paging_phi_10000007_end
+%setup_paging_phi_10000010_WhileBody
+    mov i64 [-88+bp] [-96+bp]
+    jmp i64 %setup_paging_phi_10000007_end
+%setup_paging_phi_10000007_end
+;
+;%6 = icmp ult i64 %frame.0, i64 5242880
+    cmp i64 [-88+bp] $5242880
+    jlt i64 %setup_paging_cmp_jlt_10000012_true
+    jmp i64 %setup_paging_cmp_jlt_10000012_false
+%setup_paging_cmp_jlt_10000012_true
+    mov i8 [-104+bp] r1
+    jmp i64 %setup_paging_cmp_jlt_10000012_end
+%setup_paging_cmp_jlt_10000012_false
+    mov i8 [-104+bp] r0
+    jmp i64 %setup_paging_cmp_jlt_10000012_end
+%setup_paging_cmp_jlt_10000012_end
+    mov i64 rb %setup_paging_WhileCond
+;br i1 %6, label %WhileBody, label %WhileEnd
+    cmp i8 [-104+bp] $0
+    jne i64 %setup_paging_WhileBody
+    jmp i64 %setup_paging_WhileEnd
+    und 
+%setup_paging_WhileBody
+;
+;%7 = bitcast %Frame* %4 to i64*
+    mov i64 [-112+bp] [-72+bp]
+;
+;%8 = bitcast %VirtAddr* %3 to i64*
+    mov i64 [-120+bp] [-56+bp]
+;
+;%9 = bitcast i64* %pt to %PageTable(4)*
+    mov i64 [-128+bp] [-40+bp]
+;
+;%10 = or i64 %frame.0, i64 2147483648
+    mov i64 [-136+bp] [-88+bp]
+    or i64 [-136+bp] $2147483648
+;
+;store i64 %10, i64* %8, align 8
+    mov i64 rc [-120+bp]
+    mov i64 [rc] [-136+bp]
+;
+;store i64 %frame.0, i64* %7, align 8
+    mov i64 rc [-112+bp]
+    mov i64 [rc] [-88+bp]
+;
+;call @map_to(%PageTable(4)* %9, %VirtAddr* %3, %Frame* %4, %FrameAllocator* %2)
+    mov i64 rg [-128+bp]
+    mov i64 rh [-56+bp]
+    mov i64 ri [-72+bp]
+    mov i64 rj [-24+bp]
+    call i64 %map_to
+;
+;%11 = add i64 %frame.0, i64 4096
+    mov i64 [-96+bp] [-88+bp]
+    add i64 [-96+bp] $4096
+    mov i64 rb %setup_paging_WhileBody
+;br label %WhileCond
+    jmp i64 %setup_paging_WhileCond
+%setup_paging_WhileEnd
+;
+;%12 = bitcast %PageTable(4)* %0 to i64*
+    mov i64 [-144+bp] [-8+bp]
+;
+;%13 = load i64* %pt, align 8
+    mov i64 rc [-40+bp]
+    mov i64 [-152+bp] [rc]
+;
+;store i64 %13, i64* %12, align 1
+    mov i64 rc [-144+bp]
+    mov i64 [rc] [-152+bp]
+    mov i64 rb %setup_paging_WhileEnd
+;ret void
+    jmp i64 %setup_paging_ret
+%setup_paging_ret
     mov i64 sp bp
     pop i64 bp
     ret 
@@ -758,127 +858,6 @@
 ;br label %common.ret
     jmp i64 %PageTable_4__next_table_create_common_ret
 %PageTable_4__next_table_create_ret
-    mov i64 sp bp
-    pop i64 bp
-    ret 
-
-%setup_paging
-    push i64 bp
-    mov i64 bp sp
-    sub i64 sp $152
-    mov i64 [-8+bp] rg
-    mov i64 [-16+bp] rh
-    mov i64 [-24+bp] ri
-    jmp i64 %setup_paging_Entry
-%setup_paging_Entry
-;
-;%pt = alloca i64, align 8
-    mov i64 [-40+bp] bp
-    sub i64 [-40+bp] $32
-;
-;%3 = alloca %VirtAddr, align 8
-    mov i64 [-56+bp] bp
-    sub i64 [-56+bp] $48
-;
-;%4 = alloca %Frame, align 8
-    mov i64 [-72+bp] bp
-    sub i64 [-72+bp] $64
-;
-;%5 = bitcast i64* %pt to %PageTable(1)*
-    mov i64 [-80+bp] [-40+bp]
-;
-;call @PageTable(1).init(%PageTable(1)* %5, %Frame* %1)
-    mov i64 rg [-80+bp]
-    mov i64 rh [-16+bp]
-    call i64 %PageTable_1__init
-    mov i64 rb %setup_paging_Entry
-;br label %WhileCond
-    jmp i64 %setup_paging_WhileCond
-%setup_paging_WhileCond
-;
-;%frame.0 = phi i64 [ i64 4096, %Entry ], [ i64 %11, %WhileBody ]
-    cmp i64 rb %setup_paging_Entry
-    jeq i64 %setup_paging_phi_10000008_Entry
-    cmp i64 rb %setup_paging_WhileBody
-    jeq i64 %setup_paging_phi_10000010_WhileBody
-    und 
-%setup_paging_phi_10000008_Entry
-    mov i64 [-88+bp] $4096
-    jmp i64 %setup_paging_phi_10000007_end
-%setup_paging_phi_10000010_WhileBody
-    mov i64 [-88+bp] [-96+bp]
-    jmp i64 %setup_paging_phi_10000007_end
-%setup_paging_phi_10000007_end
-;
-;%6 = icmp ult i64 %frame.0, i64 4194304
-    cmp i64 [-88+bp] $4194304
-    jlt i64 %setup_paging_cmp_jlt_10000012_true
-    jmp i64 %setup_paging_cmp_jlt_10000012_false
-%setup_paging_cmp_jlt_10000012_true
-    mov i8 [-104+bp] r1
-    jmp i64 %setup_paging_cmp_jlt_10000012_end
-%setup_paging_cmp_jlt_10000012_false
-    mov i8 [-104+bp] r0
-    jmp i64 %setup_paging_cmp_jlt_10000012_end
-%setup_paging_cmp_jlt_10000012_end
-    mov i64 rb %setup_paging_WhileCond
-;br i1 %6, label %WhileBody, label %WhileEnd
-    cmp i8 [-104+bp] $0
-    jne i64 %setup_paging_WhileBody
-    jmp i64 %setup_paging_WhileEnd
-    und 
-%setup_paging_WhileBody
-;
-;%7 = bitcast %Frame* %4 to i64*
-    mov i64 [-112+bp] [-72+bp]
-;
-;%8 = bitcast %VirtAddr* %3 to i64*
-    mov i64 [-120+bp] [-56+bp]
-;
-;%9 = bitcast i64* %pt to %PageTable(4)*
-    mov i64 [-128+bp] [-40+bp]
-;
-;%10 = or i64 %frame.0, i64 33554432
-    mov i64 [-136+bp] [-88+bp]
-    or i64 [-136+bp] $33554432
-;
-;store i64 %10, i64* %8, align 8
-    mov i64 rc [-120+bp]
-    mov i64 [rc] [-136+bp]
-;
-;store i64 %frame.0, i64* %7, align 8
-    mov i64 rc [-112+bp]
-    mov i64 [rc] [-88+bp]
-;
-;call @map_to(%PageTable(4)* %9, %VirtAddr* %3, %Frame* %4, %FrameAllocator* %2)
-    mov i64 rg [-128+bp]
-    mov i64 rh [-56+bp]
-    mov i64 ri [-72+bp]
-    mov i64 rj [-24+bp]
-    call i64 %map_to
-;
-;%11 = add i64 %frame.0, i64 4096
-    mov i64 [-96+bp] [-88+bp]
-    add i64 [-96+bp] $4096
-    mov i64 rb %setup_paging_WhileBody
-;br label %WhileCond
-    jmp i64 %setup_paging_WhileCond
-%setup_paging_WhileEnd
-;
-;%12 = bitcast %PageTable(4)* %0 to i64*
-    mov i64 [-144+bp] [-8+bp]
-;
-;%13 = load i64* %pt, align 8
-    mov i64 rc [-40+bp]
-    mov i64 [-152+bp] [rc]
-;
-;store i64 %13, i64* %12, align 1
-    mov i64 rc [-144+bp]
-    mov i64 [rc] [-152+bp]
-    mov i64 rb %setup_paging_WhileEnd
-;ret void
-    jmp i64 %setup_paging_ret
-%setup_paging_ret
     mov i64 sp bp
     pop i64 bp
     ret 

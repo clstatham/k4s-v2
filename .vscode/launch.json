@@ -27,6 +27,7 @@
             },
             "args": [
                 "build",
+                "--release",
                 "--output",
                 "${workspaceFolder}/target/kernel.k4s",
                 "${workspaceFolder}/src/tests/zig/bootstrap.k4sm",
@@ -58,6 +59,7 @@
             },
             "args": [
                 "build",
+                "--release",
                 "--output",
                 "${workspaceFolder}/target/program.k4s",
                 "${workspaceFolder}/src/tests/k4sm/test4.k4sm",

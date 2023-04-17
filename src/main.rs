@@ -117,7 +117,7 @@ fn main() -> Result<()> {
             run(bins)?;
         }
         Commands::Debug { bins } => {
-            debugger::v2::debugger_main(bins)?;
+            debugger::debugger_main(bins)?;
         }
         Commands::Build {
             sources,
@@ -143,11 +143,11 @@ fn main() -> Result<()> {
                     asm_files.push(source_path);
                 }
             }
-            // if release > 0 {
-            build_asm(asm_files, output, false)?;
-            // } else {
-            //     build_asm(asm_files, output, true)?;
-            // }
+            if release > 0 {
+                build_asm(asm_files, output, false)?;
+            } else {
+                build_asm(asm_files, output, true)?;
+            }
         }
     }
 

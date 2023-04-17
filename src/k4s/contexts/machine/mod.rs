@@ -252,8 +252,7 @@ impl MachineContext {
     }
 
     pub fn step(&mut self, update_dbg_info: bool) -> Result<MachineState> {
-        // let pc = self.translate_addr(self.regs.pc).unwrap();
-        let pc = self.regs.pc;
+        let pc = self.translate_addr(self.regs.pc)?;
         let chunk = self.peek_phys_range(pc, pc + 64)?;
         let (_, instr) = Instr::disassemble_next(chunk)
             .map_err(|err| err.to_owned())
@@ -297,13 +296,12 @@ impl MachineContext {
                 Ok(MachineState::Continue)
             }
             Ok(MachineState::ContDontUpdatePc) => {
-                // if self.regs.pc == 0 {
-                //     self.error = Some("Jump to null address".into());
-                //     Err(Error::msg("Jump to null address"))
-                // } else {
-                //     Ok(MachineState::Continue)
-                // }
-                Ok(MachineState::Continue)
+                if self.regs.pc == 0 {
+                    self.error = Some("Jump to null address".into());
+                    Err(Error::msg("Jump to null address"))
+                } else {
+                    Ok(MachineState::Continue)
+                }
             }
             Ok(MachineState::Halt) => Ok(MachineState::Halt),
             Err(e) => {
@@ -311,6 +309,23 @@ impl MachineContext {
                 Err(e)
             }
         }
+    }
+
+    pub fn find_symbol(&self, adr: u64) -> Option<String> {
+        let mut it = self.debug_symbols.iter().peekable();
+        let mut out_sym = None;
+        while let Some((addr, sym)) = it.next() {
+            if let Some((next_addr, _)) = it.peek() {
+                if (addr..*next_addr).contains(&&adr) {
+                    out_sym = Some(sym);
+                    break;
+                }
+            } else if *addr <= adr {
+                out_sym = Some(sym);
+                break;
+            }
+        }
+        out_sym.cloned()
     }
 
     pub fn update_dbg_info(&mut self) -> Result<()> {
@@ -334,22 +349,7 @@ impl MachineContext {
                     break;
                 }
                 bp = self.peek(InstrSize::I64, bp).unwrap().as_integer::<u64>().unwrap();
-                let sym = {
-                    let mut it = self.debug_symbols.iter().peekable();
-                    let mut out_sym = None;
-                    while let Some((addr, sym)) = it.next() {
-                        if let Some((next_addr, _)) = it.peek() {
-                            if (addr..*next_addr).contains(&&rip) {
-                                out_sym = Some(sym);
-                                break;
-                            }
-                        } else if *addr <= rip {
-                            out_sym = Some(sym);
-                            break;
-                        }
-                    }
-                    out_sym.unwrap_or(&"(unknown)".to_owned()).to_owned()
-                };
+                let sym = self.find_symbol(rip).unwrap_or("(unknown)".to_owned());
                 out.push(sym);
                 depth -= 1;
             }

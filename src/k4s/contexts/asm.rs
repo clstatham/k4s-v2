@@ -31,7 +31,7 @@ pub enum ParsedLine {
     Header(Header),
     Label(Label),
     Data(Data),
-    LabelOffsetConst(Label, i64, Label),
+    DataOffsetConst(Label, i64, Label),
     Instr(Instr),
 }
 
@@ -63,7 +63,7 @@ impl ParsedLine {
             },
             Self::Label(lab) => format!("{}", lab),
             Self::Data(dat) => format!("{} align{} <data>", dat.label, dat.align),
-            Self::LabelOffsetConst(name, off, lab) => format!("@{} ({}+{})", name.name(), off, lab),
+            Self::DataOffsetConst(name, off, lab) => format!("@{} ({}+{})", name.name(), off, lab),
             Self::Instr(instr) => format!("    {}", instr.display_with_symbols(symbols)),
         }
     }
@@ -118,7 +118,7 @@ impl ParsedLine {
             if let Token::LabelOffset(off, lab) = lab_off {
                 Ok((
                     rest,
-                    AssembledLine::new_unassembled(ParsedLine::LabelOffsetConst(name, off, lab)),
+                    AssembledLine::new_unassembled(ParsedLine::DataOffsetConst(name, off, lab)),
                 ))
             } else {
                 unreachable!()
@@ -200,14 +200,14 @@ impl AssembledLine {
         }
     }
 
-    pub fn all_label_refs(&self) -> Vec<String> {
+    pub fn all_label_refs(&mut self) -> Vec<&mut Label> {
         let mut out = Vec::new();
-        if let ParsedLine::Instr(ref instr) = self.asm {
-            if let Some(Token::Label(ref arg0_lab)) = instr.arg0 {
-                out.push(arg0_lab.name());
+        if let ParsedLine::Instr(ref mut instr) = self.asm {
+            if let Some(Token::Label(ref mut arg0_lab)) = instr.arg0 {
+                out.push(arg0_lab);
             }
-            if let Some(Token::Label(ref arg1_lab)) = instr.arg1 {
-                out.push(arg1_lab.name());
+            if let Some(Token::Label(ref mut arg1_lab)) = instr.arg1 {
+                out.push(arg1_lab);
             }
         }
         out
@@ -222,10 +222,10 @@ pub struct AssembledBlock {
 }
 
 impl AssembledBlock {
-    pub fn all_label_refs(&self) -> Vec<String> {
+    pub fn all_label_refs(&mut self) -> Vec<&mut Label> {
         let mut out = Vec::new();
-        for line in self.lines.iter() {
-            out.extend_from_slice(&line.all_label_refs());
+        for line in self.lines.iter_mut() {
+            out.extend(line.all_label_refs());
         }
         out
     }
@@ -235,15 +235,31 @@ impl AssembledBlock {
 pub struct MemoryRegion {
     pub id: usize,
     pub data: Vec<u8>,
+    pub program: Vec<u8>,
     pub rel_pc: u64,
     pub virt: u64,
     pub load: u64,
 }
 
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+pub enum RefType {
+    Label(String),
+    Data(String),
+}
+
+impl RefType {
+    pub fn name(&self) -> String {
+        match self {
+            Self::Label(n) => n.to_owned(),
+            Self::Data(n) => n.to_owned(),
+        }
+    }
+}
+
 pub struct AssemblyContext {
     pub blocks: FxHashMap<String, AssembledBlock>,
-    pub linked_refs: FxHashMap<String, u64>, // (label, addr found at)
-    pub unlinked_refs: FxHashMap<Label, FxHashSet<UnlinkedRef>>, // (label, addrs found at)
+    pub linked_refs: FxHashMap<RefType, u64>, // (label, addr found at)
+    pub unlinked_refs: FxHashMap<RefType, Vec<UnlinkedRef>>, // (label, addrs found at)
 
     pub region_mappings: FxHashMap<String, usize>,
     pub regions: FxHashMap<usize, MemoryRegion>,
@@ -287,6 +303,14 @@ impl AssemblyContext {
         self.regions
             .get_mut(&region_id)
             .unwrap()
+            .program
+            .extend_from_slice(bytes);
+    }
+
+    pub fn push_data_bytes(&mut self, bytes: &[u8], region_id: usize) {
+        self.regions
+            .get_mut(&region_id)
+            .unwrap()
             .data
             .extend_from_slice(bytes);
     }
@@ -308,7 +332,7 @@ impl AssemblyContext {
         include_header: bool,
         include_symbols: bool,
         existing_includes: &FxHashSet<String>,
-        existing_linked_refs: &FxHashMap<String, u64>,
+        existing_linked_refs: &FxHashMap<RefType, u64>,
     ) -> Result<Vec<u8>> {
         if let Some(entry_point) = entry_point {
             self.entry_point = entry_point;
@@ -330,7 +354,7 @@ impl AssemblyContext {
                 .context(format!("Error while parsing line {}:\n{}", line_no, line))?;
             if let ParsedLine::Data(_) = parsed_line.asm {
                 data_lines.push(parsed_line.to_owned());
-            } else if let ParsedLine::LabelOffsetConst(..) = parsed_line.asm {
+            } else if let ParsedLine::DataOffsetConst(..) = parsed_line.asm {
                 data_lines.push(parsed_line.to_owned());
             } else if !junk.is_empty() && !junk.trim().starts_with(';') {
                 log::warn!("Ignoring junk after line {line_no}: {junk}");
@@ -353,18 +377,15 @@ impl AssemblyContext {
                         self.entry_label = Some(lab.to_owned());
                         self.pc = *pc;
                         self.entry_point = *pc;
-                        let region = MemoryRegion {
-                            id: self.next_region_id.fetch_add(1, Ordering::SeqCst),
-                            data: Vec::new(),
-                            rel_pc: 0,
-                            virt: *pc,
-                            load: *pc,
-                        };
-                        assert_eq!(region.id, 0);
-                        self.regions.insert(region.id, region);
-                        // self.regions.insert(lab.name(), (*pc, *pc));
-                        // self.regions
-                        //     .insert("entry_point".to_owned(), (*pc, Vec::new()));
+                        // let region = MemoryRegion {
+                        //     id: self.next_region_id.fetch_add(1, Ordering::SeqCst),
+                        //     data: Vec::new(),
+                        //     rel_pc: 0,
+                        //     virt: *pc,
+                        //     load: *pc,
+                        // };
+                        // assert_eq!(region.id, 0);
+                        // self.regions.insert(region.id, region);
                     }
                     Header::Include(path) => {
                         if !existing_includes
@@ -378,6 +399,7 @@ impl AssemblyContext {
                     Header::Region(virt, load, labels) => {
                         let region = MemoryRegion {
                             id: self.next_region_id.fetch_add(1, Ordering::SeqCst),
+                            program: Vec::new(),
                             data: Vec::new(),
                             rel_pc: 0,
                             virt: *virt,
@@ -423,16 +445,16 @@ impl AssemblyContext {
             }
         }
 
-        for (_name, block) in self.blocks.clone().into_iter() {
+        for (_name, block) in self.blocks.clone().iter_mut() {
             for reference in block.all_label_refs() {
-                if let Some(referenced_block) = self.blocks.get_mut(&reference) {
+                if let Some(referenced_block) = self.blocks.get_mut(&reference.name()) {
                     referenced_block.refs += 1;
                 }
             }
         }
 
         // todo: reimplement dead code pruning
-        let mut kept_blocks = self
+        let mut kept_blocks: Vec<AssembledBlock> = self
             .blocks
             .values()
             .map(|block| block.to_owned())
@@ -443,7 +465,7 @@ impl AssemblyContext {
         let thrown_away_count = self.blocks.len() - kept_blocks.len();
         log::debug!("Threw away {} unused blocks!", thrown_away_count);
 
-        // let mut rel_pc = 0;
+        // assemble each block within the context of its memory region (addresses are relative to the region's start)
         for block in kept_blocks.iter_mut() {
             if block.label.name() == self.entry_label.as_ref().unwrap().name() {
                 log::trace!(
@@ -459,40 +481,119 @@ impl AssemblyContext {
                     block.lines.len()
                 );
             }
+            // default the region to the entry point's
             {
                 let region = self
                     .regions
                     .get(self.region_mappings.get(&block.label.name()).unwrap_or(&0))
                     .unwrap();
-                block.label.region_id = region.id;
+                block.label.region_id = Some(region.id);
                 self.region_mappings.insert(block.label.name(), region.id);
             }
 
+            // for every line of assembly...
             for line in block.lines.iter_mut() {
                 let region = self
                     .regions
                     .get_mut(self.region_mappings.get(&block.label.name()).unwrap_or(&0))
                     .unwrap();
 
+                // if it's an instruction, make sure we link any addrs in the arguments later
                 if let ParsedLine::Instr(ref mut instr) = line.asm {
                     let (size, mut refs) =
                         instr.assemble(region.rel_pc, region.id, &mut line.mc)?;
 
+                    // put addr arguments in the unlinked_refs to the label for that addr
                     for refr in refs.iter_mut() {
+                        refr.label.region_id =
+                            self.region_mappings.get(&refr.label.name()).copied();
                         self.unlinked_refs
-                            .entry(refr.label.to_owned())
-                            .or_insert(FxHashSet::default())
-                            .insert(refr.to_owned());
+                            .entry(refr.ref_type())
+                            .or_insert(Vec::default())
+                            .push(refr.to_owned());
                     }
 
                     region.rel_pc += size as u64;
                 } else if let ParsedLine::Label(ref mut lab) = line.asm {
-                    lab.region_id = region.id;
-                    if !self.linked_refs.contains_key(&lab.name()) {
-                        self.linked_refs
-                            .insert(lab.name().to_owned(), region.rel_pc + region.virt);
-                    }
+                    // if it's a whole label, mark down where it ended up, offset by the region's virtual start
+                    lab.region_id = Some(region.id);
                     self.region_mappings.insert(lab.name(), region.id);
+                    self.linked_refs
+                        .entry(RefType::Label(lab.name()))
+                        .or_insert(region.rel_pc);
+                }
+            }
+        }
+
+        for data_line in data_lines {
+            if let ParsedLine::Data(data) = data_line.asm {
+                if !self
+                    .linked_refs
+                    .contains_key(&RefType::Data(data.label.name()))
+                {
+                    let region_id = *self.region_mappings.entry(data.label.name()).or_insert(0);
+                    let region = self.regions.get(&region_id).unwrap();
+
+                    if data.align > 0 {
+                        let pad = (data.align - (region.data.len() % data.align)) % data.align;
+                        self.push_data_bytes(&vec![0; pad], region_id);
+                    }
+
+                    let region = self.regions.get(&region_id).unwrap();
+                    self.linked_refs.insert(
+                        RefType::Data(data.label.name().to_owned()),
+                        region.data.len() as u64,
+                    );
+
+                    self.push_data_bytes(&data.data, region_id);
+                }
+            } else if let ParsedLine::DataOffsetConst(name, off, lab) = data_line.asm {
+                let region_id = *self.region_mappings.entry(name.name()).or_insert(0);
+                let region = self.regions.get(&region_id).unwrap();
+
+                self.unlinked_refs
+                    .entry(RefType::Data(lab.name()))
+                    .or_insert(Vec::default())
+                    .push(UnlinkedRef {
+                        ty: UnlinkedRefType::DataOffset(off),
+                        label: lab.to_owned(),
+                        region_id,
+                        loc: region.data.len() as u64,
+                    });
+
+                if !self.linked_refs.contains_key(&RefType::Data(name.name())) {
+                    self.linked_refs.insert(
+                        RefType::Data(name.name().to_owned()),
+                        region.data.len() as u64,
+                    );
+                }
+
+                self.push_data_bytes(&[0; 8], region_id);
+            }
+        }
+
+        // 2nd pass of resolving label regions
+        for (_, refrs) in self.unlinked_refs.iter_mut() {
+            for refr in refrs.iter_mut() {
+                refr.label.region_id = self.region_mappings.get(&refr.label.name()).copied();
+                if refr.label.region_id.is_none() {
+                    log::warn!(
+                        "2nd pass: Couldn't find or infer region for label {}",
+                        refr.label
+                    );
+                }
+            }
+        }
+
+        for block in kept_blocks.iter_mut() {
+            for refr_label in block.all_label_refs() {
+                if refr_label.region_id.is_none() {
+                    refr_label.region_id = Some(
+                        self.region_mappings
+                            .get(&refr_label.name())
+                            .copied()
+                            .unwrap(),
+                    );
                 }
             }
         }
@@ -503,79 +604,33 @@ impl AssemblyContext {
             }
         }
 
-        for data_line in data_lines {
-            if let ParsedLine::Data(data) = data_line.asm {
-                if !self.linked_refs.contains_key(&data.label.name()) {
-                    let region_id = *self.region_mappings.entry(data.label.name()).or_insert(0);
-                    let region = self.regions.get(&region_id).unwrap();
-
-                    if data.align > 0 {
-                        let pad = (data.align - (region.data.len() % data.align)) % data.align;
-                        self.push_program_bytes(&vec![0; pad], region_id);
-                    }
-
-                    let region = self.regions.get(&region_id).unwrap();
-                    self.linked_refs.insert(
-                        data.label.name().to_owned(),
-                        region.data.len() as u64 + region.virt,
-                    );
-
-                    self.push_program_bytes(&data.data, region_id);
-                }
-            } else if let ParsedLine::LabelOffsetConst(name, off, lab) = data_line.asm {
-                let region_id = *self.region_mappings.entry(name.name()).or_insert(0);
-                let region = self.regions.get(&region_id).unwrap();
-
-                self.unlinked_refs
-                    .entry(lab.to_owned())
-                    .or_insert(FxHashSet::default())
-                    .insert(UnlinkedRef {
-                        ty: UnlinkedRefType::LabelOffset(off),
-                        label: lab.to_owned(),
-                        region_id,
-                        loc: region.data.len() as u64,
-                    });
-
-                if !self.linked_refs.contains_key(&name.name()) {
-                    self.linked_refs.insert(
-                        name.name().to_owned(),
-                        region.data.len() as u64 + region.virt,
-                    );
-                }
-
-                self.push_program_bytes(&[0; 8], region_id);
-            }
-        }
-
         log::debug!("Found {} linked references.", self.linked_refs.len());
 
         let mut undefined_refs = Vec::new();
 
         for (ref lab, ref mut refs) in self.unlinked_refs.drain() {
-            if let Some(loc) = self.linked_refs.get(&lab.name()) {
-                for refr in refs.drain() {
-                    // let loc_region_virt = self
-                    //     .regions
-                    //     .get(self.region_mappings.get(&lab.name()).unwrap())
-                    //     .unwrap()
-                    //     .virt;
+            if let Some(loc) = self.linked_refs.get(lab) {
+                for refr in refs.drain(..) {
+                    let (adjusted_loc, program_len) = {
+                        let region = self.regions.get(&refr.label.region_id.unwrap()).unwrap();
+                        (*loc + region.virt, region.program.len() as u64)
+                    };
+
                     let refr_region = self.regions.get_mut(&refr.region_id).unwrap();
-                    // let loc = loc_region_virt + *loc;
+
                     match refr.ty {
-                        UnlinkedRefType::Label => refr_region.data
+                        UnlinkedRefType::Label => refr_region.program
                             [refr.loc as usize..refr.loc as usize + 8]
-                            .copy_from_slice(&loc.to_bytes()),
-                        UnlinkedRefType::LabelOffset(off) => {
-                            if let Some(pointee_loc) =
-                                self.linked_refs.get(&refr.label.name()).copied()
-                            {
-                                refr_region.data[refr.loc as usize..refr.loc as usize + 8]
-                                    .copy_from_slice(
-                                        &((pointee_loc as i64 + off) as u64).to_bytes(),
-                                    );
-                            } else {
-                                undefined_refs.push(refr.label.to_owned());
-                            }
+                            .copy_from_slice(&(adjusted_loc).to_bytes()),
+                        UnlinkedRefType::DataOffset(off) => {
+                            let adjusted_loc = adjusted_loc + program_len;
+                            refr_region.data[refr.loc as usize..refr.loc as usize + 8]
+                                .copy_from_slice(&((adjusted_loc as i64 + off) as u64).to_bytes());
+                        }
+                        UnlinkedRefType::Data => {
+                            let adjusted_loc = adjusted_loc + program_len;
+                            refr_region.program[refr.loc as usize..refr.loc as usize + 8]
+                                .copy_from_slice(&adjusted_loc.to_bytes());
                         }
                     }
                 }
@@ -586,17 +641,25 @@ impl AssemblyContext {
 
         log::debug!("{} undefined references remain.", undefined_refs.len());
         for refr in undefined_refs {
-            log::debug!("Undefined reference to label {}", refr);
+            log::debug!("Undefined reference to {:?}", refr);
         }
 
+        let binary_size = self
+            .regions
+            .values()
+            .map(|reg| reg.load as usize + reg.program.len() + reg.data.len())
+            .max()
+            .unwrap();
         let mut ordered_regions = self.regions.iter().collect::<Vec<_>>();
         ordered_regions.sort_by_key(|(_, region)| region.load);
 
-        self.output = Vec::new();
+        self.output = vec![0u8; binary_size];
         for (_, region) in ordered_regions {
-            self.output
-                .extend_from_slice(&vec![0u8; region.load as usize - self.output.len()]);
-            self.output.extend_from_slice(&region.data);
+            self.output[region.load as usize..region.load as usize + region.program.len()]
+                .copy_from_slice(&region.program);
+            self.output[region.load as usize + region.program.len()
+                ..region.load as usize + region.program.len() + region.data.len()]
+                .copy_from_slice(&region.data);
         }
 
         self.kept_blocks = kept_blocks;
@@ -614,7 +677,7 @@ impl AssemblyContext {
                     .map(|(s, adr)| {
                         let region = self
                             .regions
-                            .get(self.region_mappings.get(s).unwrap())
+                            .get(self.region_mappings.get(&s.name()).unwrap())
                             .unwrap();
                         (s, adr + region.virt)
                     })
@@ -623,10 +686,10 @@ impl AssemblyContext {
                 for (label, addr) in syms {
                     final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_ADDR);
                     final_out.extend_from_slice(&addr.to_bytes());
-                    final_out.extend_from_slice(label.as_bytes());
+                    final_out.extend_from_slice(label.name().as_bytes());
                     final_out.extend_from_slice(tags::HEADER_DEBUG_SYMBOLS_ENTRY_END);
 
-                    self.symbols.insert(addr, label.to_owned());
+                    self.symbols.insert(addr, label.name());
                 }
             }
 

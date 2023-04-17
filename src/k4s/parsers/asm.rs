@@ -13,8 +13,8 @@ use nom::{
 };
 
 use crate::k4s::{
-    contexts::asm::Header, Data, Instr, InstrSig, InstrSize, Label, Opcode, Primitive, Register,
-    Token,
+    contexts::asm::{Header, RefType},
+    Data, Instr, InstrSig, InstrSize, Label, Opcode, Primitive, Register, Token,
 };
 
 use super::machine::tags::{ADDRESS, LITERAL, REGISTER_OFFSET};
@@ -576,7 +576,7 @@ impl Token {
                 line.extend_from_slice(&[LITERAL]);
                 line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
-                    ty: UnlinkedRefType::LabelOffset(*off),
+                    ty: UnlinkedRefType::DataOffset(*off),
                     label: lab.to_owned(),
                     region_id,
                     loc: pc + 1,
@@ -601,7 +601,7 @@ impl Token {
                 line.extend_from_slice(&[LITERAL]);
                 line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
-                    ty: UnlinkedRefType::Label,
+                    ty: UnlinkedRefType::Data,
                     label: data.label.to_owned(),
                     region_id,
                     loc: pc + 1,
@@ -634,8 +634,9 @@ impl Opcode {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub enum UnlinkedRefType {
-    Label,            // single-pointers to locations in memory
-    LabelOffset(i64), // double-pointers that must be dereferenced to single-pointers at compile time
+    Label,           // single-pointers to locations in memory
+    DataOffset(i64), // double-pointers that must be dereferenced to single-pointers at compile time
+    Data,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
@@ -644,6 +645,16 @@ pub struct UnlinkedRef {
     pub label: Label,
     pub region_id: usize,
     pub loc: u64,
+}
+
+impl UnlinkedRef {
+    pub fn ref_type(&self) -> RefType {
+        match self.ty {
+            UnlinkedRefType::Label => RefType::Label(self.label.name()),
+            UnlinkedRefType::DataOffset(_) => RefType::Data(self.label.name()),
+            UnlinkedRefType::Data => RefType::Data(self.label.name()),
+        }
+    }
 }
 
 impl Instr {

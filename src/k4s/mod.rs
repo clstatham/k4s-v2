@@ -226,7 +226,7 @@ impl<T: Primitive + BitXor<T, Output = T>> BitXor<Prim<T>> for Prim<T> {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Default)]
 pub struct Label {
     name: String,
-    pub region_id: usize,
+    pub region_id: Option<usize>,
 }
 
 impl Display for Label {
@@ -239,14 +239,14 @@ impl Label {
     pub fn new(label: String) -> Self {
         Self {
             name: label,
-            region_id: 0,
+            region_id: None,
         }
     }
 
     pub fn new_in_region(label: String, region_id: usize) -> Self {
         Self {
             name: label,
-            region_id,
+            region_id: Some(region_id),
         }
     }
 

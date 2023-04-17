@@ -1,15 +1,15 @@
 !ent %_start @ 0x1000
-!region 0x2000 > 0x2000 : @regiontestdata
+!region 0x1000 > 0x1000 : @_start
+!region 0x4000 > 0x2000 : @regiontestdata %regiontestlabel
 
 %_start
     printi i64 %_start
-    printi i64 @regiontestdata
-    mov i64 ra @regiontestdata
+    printi i64 %regiontestlabel
+    mov i64 ra %regiontestlabel
     printi i64 [ra]
     hlt
 
-@regiontestdata align1 $42
+%regiontestlabel
+    ret
+@regiontestdata align1 "Tag"
 
-; %regiontest
-;     printi i64 $420
-;     ret

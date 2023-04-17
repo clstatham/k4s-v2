@@ -3,24 +3,24 @@ const builtin = std.builtin;
 const mem = std.mem;
 const fmt = std.fmt;
 
-extern fn printi(a: u64) void;
-extern fn printc(a: u8) void;
-extern fn hlt() noreturn;
-extern fn und() noreturn;
-extern fn write_pt(pt: u64) noreturn;
+extern fn boot_printi(a: u64) void;
+extern fn boot_printc(a: u8) void;
+extern fn boot_hlt() noreturn;
+extern fn boot_und() noreturn;
+extern fn boot_write_pt(pt: u64) noreturn;
 
 fn println(s: []const u8) void {
     for (s) |c| {
-        printc(c);
+        boot_printc(c);
     }
-    printc('\n');
+    boot_printc('\n');
 }
 
 const FRAME_ALLOC_START: u64 = 0x1000;
-const PHYS_OFFSET: u64 = 0x2000000;
+const PHYS_OFFSET: u64 = 0x80000000;
 const KERNEL_OFFSET_PHYS: u64 = 0x200000;
 const KERNEL_OFFSET_VIRT: u64 = KERNEL_OFFSET_PHYS | PHYS_OFFSET;
-const KERNEL_END_PHYS: u64 = 0x400000;
+const KERNEL_END_PHYS: u64 = 0x500000;
 const KERNEL_END_VIRT: u64 = KERNEL_END_PHYS | PHYS_OFFSET;
 const PAGE_SIZE: u64 = 4096;
 const ENTRIES_PER_TABLE: usize = 512; // each entry is a u64 (8 bytes)
@@ -147,16 +147,16 @@ noinline fn setup_paging(pt4_frame: Frame, frame_alloc: *FrameAllocator) PageTab
 
 pub export fn bootloader_main(mem_size: u64) noreturn {
     println("Physical memory size is:");
-    printi(mem_size);
+    boot_printi(mem_size);
     println("Creating page table at:");
     var frame_alloc = FrameAllocator.init();
     const pt4_frame = Frame.init(frame_alloc.alloc());
-    printi(pt4_frame.addr_value());
+    boot_printi(pt4_frame.addr_value());
 
     var page_table = setup_paging(pt4_frame, &frame_alloc);
     _ = page_table;
     println("Enabling paging.");
-    write_pt(@truncate(u64, pt4_frame.addr_value()));
+    boot_write_pt(@truncate(u64, pt4_frame.addr_value()));
     // println("Paging is enabled!");
     // map_to(&page_table, VirtAddr.init(0xbaadf00d), Frame.init(0xcafeb000), 0b1, &frame_alloc);
     // println("0xbaadf00d =>");
@@ -169,16 +169,11 @@ pub export fn bootloader_main(mem_size: u64) noreturn {
     // hlt();
 }
 
-pub export fn kernel_main() noreturn {
-    printi(42069);
-    hlt();
-}
-
 pub fn panic(msg: []const u8, stack_trace: ?*builtin.StackTrace) noreturn {
     _ = msg;
     _ = stack_trace;
     // var buf: [1024 * 10]u8 = undefined;
     // const formatted = fmt.bufPrint(buf[0..], "Panic! {s}", .{msg}) catch "Panic!!!";
     println("Panic!!!");
-    und();
+    boot_und();
 }
