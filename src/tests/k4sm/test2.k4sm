@@ -12,10 +12,10 @@
     push i64 rb
     mov i64 rb rg
 %printstrln_asm_loop
-    cmp i8 [rb] rz
+    cmp i8 [rb] r0
     jeq i64 %printstrln_asm_ret
     printc i8 [rb]
-    add i64 rb $1
+    add i64 rb r1
     jmp i64 %printstrln_asm_loop
 %printstrln_asm_ret
     printc i8 $0xa ; newline

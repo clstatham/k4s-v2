@@ -1,12 +1,11 @@
 use std::{
     cmp::Ordering,
+    collections::BTreeMap,
     fmt::Display,
     ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
 };
 
 use anyhow::{Error, Result};
-
-use rustc_hash::FxHashMap;
 
 pub mod contexts;
 pub mod parsers;
@@ -224,8 +223,11 @@ impl<T: Primitive + BitXor<T, Output = T>> BitXor<Prim<T>> for Prim<T> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd)]
-pub struct Label(String);
+#[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Default)]
+pub struct Label {
+    name: String,
+    pub region_id: usize,
+}
 
 impl Display for Label {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -235,13 +237,23 @@ impl Display for Label {
 
 impl Label {
     pub fn new(label: String) -> Self {
-        Self(label)
+        Self {
+            name: label,
+            region_id: 0,
+        }
+    }
+
+    pub fn new_in_region(label: String, region_id: usize) -> Self {
+        Self {
+            name: label,
+            region_id,
+        }
     }
 
     pub fn name(&self) -> String {
-        rustc_demangle::demangle(&self.0)
+        rustc_demangle::demangle(&self.name)
             .as_str()
-            .replace(['$', '.'], "_")
+            .replace(['$', '.', '(', ')', '[', ']', '*', '{', '}', ','], "_")
     }
 }
 
@@ -323,17 +335,27 @@ impl Display for Token {
     }
 }
 
-macro_rules! token_arith_impl {
-    ($op:ident) => {
-        pub fn $op(&self, rhs: &Self) -> Result<Self> {
+macro_rules! token_arith_impl_checked {
+    ($ins:ident, $op:ident) => {
+        pub fn $ins(&self, rhs: &Self) -> Result<Self> {
             match (self, rhs) {
-                (Self::I8(a), Self::I8(b)) => Ok(Self::I8(a.$op(b))),
-                (Self::I16(a), Self::I16(b)) => Ok(Self::I16(a.$op(b))),
-                (Self::I32(a), Self::I32(b)) => Ok(Self::I32(a.$op(b))),
-                (Self::I64(a), Self::I64(b)) => Ok(Self::I64(a.$op(b))),
-                (Self::I128(a), Self::I128(b)) => Ok(Self::I128(a.$op(b))),
-                (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
-                (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
+                (Self::I8(a), Self::I8(b)) => {
+                    Ok(Self::I8(a.$op(*b).ok_or(Error::msg("over/underflow"))?))
+                }
+                (Self::I16(a), Self::I16(b)) => {
+                    Ok(Self::I16(a.$op(*b).ok_or(Error::msg("over/underflow"))?))
+                }
+                (Self::I32(a), Self::I32(b)) => {
+                    Ok(Self::I32(a.$op(*b).ok_or(Error::msg("over/underflow"))?))
+                }
+                (Self::I64(a), Self::I64(b)) => {
+                    Ok(Self::I64(a.$op(*b).ok_or(Error::msg("over/underflow"))?))
+                }
+                (Self::I128(a), Self::I128(b)) => {
+                    Ok(Self::I128(a.$op(*b).ok_or(Error::msg("over/underflow"))?))
+                }
+                // (Self::F32(a), Self::F32(b)) => Ok(Self::F32(a.$op(b))),
+                // (Self::F64(a), Self::F64(b)) => Ok(Self::F64(a.$op(b))),
                 _ => Err(Error::msg(
                     "token types must match and be numeric for arithmetic operations",
                 )),
@@ -343,8 +365,8 @@ macro_rules! token_arith_impl {
 }
 
 macro_rules! token_int_arith_impl {
-    ($op:ident) => {
-        pub fn $op(&self, rhs: &Self) -> Result<Self> {
+    ($ins:ident, $op:ident) => {
+        pub fn $ins(&self, rhs: &Self) -> Result<Self> {
             match (self, rhs) {
                 (Self::I8(a), Self::I8(b)) => Ok(Self::I8(a.$op(b))),
                 (Self::I16(a), Self::I16(b)) => Ok(Self::I16(a.$op(b))),
@@ -360,15 +382,15 @@ macro_rules! token_int_arith_impl {
 }
 
 macro_rules! token_signed_int_arith_impl {
-    ($op:ident, $op2:ident) => {
-        pub fn $op(&self, rhs: &Self) -> Result<Self> {
+    ($ins:ident, $op:ident) => {
+        pub fn $ins(&self, rhs: &Self) -> Result<Self> {
             match (self, rhs) {
-                (Self::I8(a), Self::I8(b)) => Ok(Self::I8((*a as i8).$op2(*b as i8) as u8)),
-                (Self::I16(a), Self::I16(b)) => Ok(Self::I16((*a as i16).$op2(*b as i16) as u16)),
-                (Self::I32(a), Self::I32(b)) => Ok(Self::I32((*a as i32).$op2(*b as i32) as u32)),
-                (Self::I64(a), Self::I64(b)) => Ok(Self::I64((*a as i64).$op2(*b as i64) as u64)),
+                (Self::I8(a), Self::I8(b)) => Ok(Self::I8((*a as i8).$op(*b as i8) as u8)),
+                (Self::I16(a), Self::I16(b)) => Ok(Self::I16((*a as i16).$op(*b as i16) as u16)),
+                (Self::I32(a), Self::I32(b)) => Ok(Self::I32((*a as i32).$op(*b as i32) as u32)),
+                (Self::I64(a), Self::I64(b)) => Ok(Self::I64((*a as i64).$op(*b as i64) as u64)),
                 (Self::I128(a), Self::I128(b)) => {
-                    Ok(Self::I128((*a as i128).$op2(*b as i128) as u128))
+                    Ok(Self::I128((*a as i128).$op(*b as i128) as u128))
                 }
                 _ => Err(Error::msg(
                     "token types must match and be integers for signed integer arithmetic operations",
@@ -379,16 +401,16 @@ macro_rules! token_signed_int_arith_impl {
 }
 
 impl Token {
-    token_arith_impl!(add);
-    token_arith_impl!(sub);
-    token_arith_impl!(mul);
-    token_arith_impl!(div);
-    token_arith_impl!(rem);
-    token_int_arith_impl!(bitand);
-    token_int_arith_impl!(bitor);
-    token_int_arith_impl!(bitxor);
-    token_int_arith_impl!(shl);
-    token_int_arith_impl!(shr);
+    token_arith_impl_checked!(add, checked_add);
+    token_arith_impl_checked!(sub, checked_sub);
+    token_arith_impl_checked!(mul, checked_mul);
+    token_arith_impl_checked!(div, checked_div);
+    token_arith_impl_checked!(rem, checked_rem);
+    token_int_arith_impl!(bitand, bitand);
+    token_int_arith_impl!(bitor, bitor);
+    token_int_arith_impl!(bitxor, bitxor);
+    token_int_arith_impl!(shl, shl);
+    token_int_arith_impl!(shr, shr);
     token_signed_int_arith_impl!(sshr, shr);
     token_signed_int_arith_impl!(smod, rem);
     token_signed_int_arith_impl!(sdiv, div);
@@ -503,7 +525,7 @@ impl Token {
         InstrSize::from_integer_bits(self.value_size_in_bytes() as u32 * 8).unwrap()
     }
 
-    pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
+    pub fn display_with_symbols(&self, symbols: &BTreeMap<u64, String>) -> String {
         match self {
             Self::Addr(v) => format!("[{}]", v.display_with_symbols(symbols)),
             Self::I64(v) => {
@@ -628,6 +650,7 @@ pub enum Opcode {
     Shr,
     Sshr,
     Sext,
+    Enpt,
 }
 
 impl Opcode {
@@ -684,6 +707,7 @@ impl Opcode {
             Opcode::Shr => 2,
             Opcode::Sshr => 2,
             Opcode::Sext => 1,
+            Opcode::Enpt => 1,
         }
     }
 }
@@ -738,6 +762,7 @@ impl Display for Opcode {
             Self::Shr => "shr",
             Self::Sshr => "sshr",
             Self::Sext => "sext",
+            Self::Enpt => "enpt",
         };
         write!(f, "{}", s)
     }
@@ -858,7 +883,7 @@ impl Instr {
             .ok_or(Error::msg("no arg1 for instruction"))
     }
 
-    pub fn display_with_symbols(&self, symbols: &FxHashMap<u64, String>) -> String {
+    pub fn display_with_symbols(&self, symbols: &BTreeMap<u64, String>) -> String {
         use std::fmt::Write;
         let mut f = String::new();
         write!(f, "{} {}", self.opcode, self.size).unwrap();

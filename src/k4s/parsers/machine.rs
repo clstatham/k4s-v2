@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use nom::{
     branch::alt,
     bytes::complete::{tag, take, take_until1},
@@ -6,7 +8,6 @@ use nom::{
     sequence::tuple,
     IResult,
 };
-use rustc_hash::FxHashMap;
 
 use crate::k4s::{Instr, InstrSize, Opcode, Primitive, Register, Token};
 
@@ -43,7 +44,7 @@ pub fn debug_entry(mc: &[u8]) -> IResult<&[u8], (String, u64)> {
     )(mc)
 }
 
-pub fn parse_debug_symbols(mc: &[u8]) -> IResult<&[u8], FxHashMap<u64, String>> {
+pub fn parse_debug_symbols(mc: &[u8]) -> IResult<&[u8], BTreeMap<u64, String>> {
     map(
         tuple((
             tag(tags::HEADER_DEBUG_SYMBOLS_START),
@@ -221,6 +222,7 @@ pub fn parse_opcode(mc: &[u8]) -> IResult<&[u8], Opcode> {
             |mc| Opcode::Sext.parse_mc(mc),
             |mc| Opcode::Jge.parse_mc(mc),
             |mc| Opcode::Jle.parse_mc(mc),
+            |mc| Opcode::Enpt.parse_mc(mc),
         )),
     ))(mc)
 }

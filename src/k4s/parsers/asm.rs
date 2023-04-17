@@ -183,6 +183,49 @@ pub fn header_entry(i: &str) -> IResult<&str, Header> {
     )(i)
 }
 
+pub fn header_region(i: &str) -> IResult<&str, Header> {
+    map(
+        tuple((
+            tag("!region"),
+            space1,
+            |i| hexadecimal(InstrSize::I64, i),
+            space1,
+            tag(">"),
+            space1,
+            |i| hexadecimal(InstrSize::I64, i),
+            space1,
+            tag(":"),
+            many1(tuple((space1, alt((label, data_tag))))),
+        )),
+        |(_, _, virt, _, _, _, load, _, _, labels)| {
+            if let Token::I64(virt) = virt {
+                if let Token::I64(load) = load {
+                    Header::Region(
+                        virt,
+                        load,
+                        labels
+                            .iter()
+                            .map(|(_, label)| {
+                                if let Token::Label(lab) = label {
+                                    lab.to_owned()
+                                } else if let Token::Data(dat) = label {
+                                    dat.label.to_owned()
+                                } else {
+                                    unreachable!()
+                                }
+                            })
+                            .collect(),
+                    )
+                } else {
+                    unreachable!()
+                }
+            } else {
+                unreachable!()
+            }
+        },
+    )(i)
+}
+
 pub fn label(i: &str) -> IResult<&str, Token> {
     map(
         tuple((
@@ -196,7 +239,7 @@ pub fn label(i: &str) -> IResult<&str, Token> {
                 recognize(|i| decimal(InstrSize::I64, i)),
             ))),
         )),
-        |res| Token::Label(Label::new(res.1.join(""))),
+        |(_, name)| Token::Label(Label::new(name.join(""))),
     )(i)
 }
 
@@ -471,6 +514,7 @@ pub fn opcode(asm: &str) -> IResult<&str, Opcode> {
             |asm| Opcode::Sext.parse_asm(asm),
             |asm| Opcode::Jge.parse_asm(asm),
             |asm| Opcode::Jle.parse_asm(asm),
+            |asm| Opcode::Enpt.parse_asm(asm),
         )),
     ))(asm)
 }
@@ -488,7 +532,12 @@ pub fn size(asm: &str) -> IResult<&str, InstrSize> {
 }
 
 impl Token {
-    pub fn assemble(&mut self, pc: u64, line: &mut Vec<u8>) -> Option<UnlinkedRef> {
+    pub fn assemble(
+        &mut self,
+        pc: u64,
+        region_id: usize,
+        line: &mut Vec<u8>,
+    ) -> Option<UnlinkedRef> {
         match self {
             Token::I8(val) => line.extend_from_slice(&[LITERAL, *val]),
             Token::I16(val) => {
@@ -528,7 +577,8 @@ impl Token {
                 line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::LabelOffset(*off),
-                    label: lab.name(),
+                    label: lab.to_owned(),
+                    region_id,
                     loc: pc + 1,
                 });
             }
@@ -537,13 +587,14 @@ impl Token {
                 line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Label,
-                    label: lab.name(),
+                    label: lab.to_owned(),
+                    region_id,
                     loc: pc + 1,
                 });
             }
             Token::Addr(adr) => {
                 line.extend_from_slice(&[ADDRESS]);
-                return adr.assemble(pc + 1, line);
+                return adr.assemble(pc + 1, region_id, line);
             }
             Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
             Token::Data(data) => {
@@ -551,7 +602,8 @@ impl Token {
                 line.extend_from_slice(&[0x00; 8]);
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Label,
-                    label: data.label.name(),
+                    label: data.label.to_owned(),
+                    region_id,
                     loc: pc + 1,
                 });
             }
@@ -589,7 +641,8 @@ pub enum UnlinkedRefType {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub struct UnlinkedRef {
     pub ty: UnlinkedRefType,
-    pub label: String,
+    pub label: Label,
+    pub region_id: usize,
     pub loc: u64,
 }
 
@@ -611,6 +664,7 @@ impl Instr {
     pub fn assemble(
         &mut self,
         mut pc: u64,
+        region_id: usize,
         line: &mut Vec<u8>,
     ) -> Result<(usize, Vec<UnlinkedRef>)> {
         let opcode = self.opcode.mc_repr();
@@ -620,13 +674,13 @@ impl Instr {
         pc += 2;
         let mut refs = Vec::new();
         if let Some(ref mut arg) = self.arg0 {
-            if let Some(r) = arg.assemble(pc, line) {
+            if let Some(r) = arg.assemble(pc, region_id, line) {
                 refs.push(r);
             }
             pc += arg.mc_size_in_bytes() as u64;
         }
         if let Some(ref mut arg) = self.arg1 {
-            if let Some(r) = arg.assemble(pc, line) {
+            if let Some(r) = arg.assemble(pc, region_id, line) {
                 refs.push(r);
             }
             pc += arg.mc_size_in_bytes() as u64;

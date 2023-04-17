@@ -617,6 +617,10 @@ impl LlvmContext {
                             writeln!(out, "{} align8 resb 0", elem_name).unwrap();
                             total += total % 8;
                         }
+                        Token::Unknown => {
+                            let size = elem.ty().total_size_in_bytes(types);
+                            writeln!(out, "{} align0 resb {}", elem_name, size).unwrap();
+                        }
                         _ => todo!("{:?}", elem.storage()),
                     }
                 }

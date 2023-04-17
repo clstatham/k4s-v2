@@ -28,9 +28,39 @@
             "args": [
                 "build",
                 "--output",
+                "${workspaceFolder}/target/kernel.k4s",
+                "${workspaceFolder}/src/tests/zig/bootstrap.k4sm",
+                "${workspaceFolder}/src/tests/zig/bootloader.bc",
+                "${workspaceFolder}/src/tests/zig/kernel.bc"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug `k4s build` testX",
+            "env": {
+                "RUST_LOG": "k4s=trace"
+            },
+            "cargo": {
+                "env": {
+                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                },
+                "args": [
+                    "build",
+                    "--bin=k4s",
+                    "--package=k4s-v2",
+                ],
+                "filter": {
+                    "name": "k4s",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "build",
+                "--output",
                 "${workspaceFolder}/target/program.k4s",
-                "${workspaceFolder}/src/tests/zig/zigtest_main.k4sm",
-                "${workspaceFolder}/src/tests/zig/zigtest.bc"
+                "${workspaceFolder}/src/tests/k4sm/test4.k4sm",
             ],
             "cwd": "${workspaceFolder}"
         },
@@ -69,7 +99,7 @@
             "request": "launch",
             "name": "Debug `k4s run`",
             "env": {
-                "RUST_LOG": "k4s=trace"
+                "RUST_LOG": "k4s=debug"
             },
             "cargo": {
                 "env": {
@@ -87,7 +117,7 @@
             },
             "args": [
                 "run",
-                "${workspaceFolder}/target/program.k4s"
+                "${workspaceFolder}/target/kernel.k4s"
             ],
             "cwd": "${workspaceFolder}"
         },
@@ -96,7 +126,7 @@
             "request": "launch",
             "name": "Debug `k4s debug`",
             "env": {
-                "RUST_LOG": "k4s=trace"
+                "RUST_LOG": "k4s=debug"
             },
             "cargo": {
                 "env": {
@@ -114,7 +144,7 @@
             },
             "args": [
                 "debug",
-                "${workspaceFolder}/target/program.k4s"
+                "${workspaceFolder}/target/kernel.k4s"
             ],
             "cwd": "${workspaceFolder}"
         },

@@ -28,9 +28,9 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Run a compiled k4s binary in an emulator
-    Run { binary: PathBuf },
+    Run { bins: Vec<PathBuf> },
     /// Debug a compiled k4s binary with an interactive graphical debugger
-    Debug { binary: PathBuf },
+    Debug { bins: Vec<PathBuf> },
     /// Build *.k4sm assembly and LLVM *.bc bitcode into a compiled k4s binary
     Build {
         #[arg(short, long, action = clap::ArgAction::Count)]
@@ -41,14 +41,18 @@ enum Commands {
     },
 }
 
-pub const TWO_GIGS: usize = 1024 * 1024 * 1024 * 2;
+pub const FOUR_GIGS: usize = 1024 * 1024 * 1024 * 4;
 
-fn run(bin_path: PathBuf) -> Result<()> {
-    let mut program = vec![];
-    let mut file = File::open(bin_path)?;
-    file.read_to_end(&mut program)?;
+fn run(bin_paths: Vec<PathBuf>) -> Result<()> {
+    let mut programs = vec![];
+    for bin_path in bin_paths {
+        let mut program = vec![];
+        let mut file = File::open(bin_path)?;
+        file.read_to_end(&mut program)?;
+        programs.push(program);
+    }
 
-    let mut machine = MachineContext::new(&program, TWO_GIGS)?;
+    let mut machine = MachineContext::new(programs, FOUR_GIGS)?;
     machine.run_until_hlt()?;
     Ok(())
 }
@@ -109,11 +113,11 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     match cli.command {
-        Commands::Run { binary } => {
-            run(binary)?;
+        Commands::Run { bins } => {
+            run(bins)?;
         }
-        Commands::Debug { binary } => {
-            debugger::debugger_main(binary)?;
+        Commands::Debug { bins } => {
+            debugger::v2::debugger_main(bins)?;
         }
         Commands::Build {
             sources,
@@ -139,11 +143,11 @@ fn main() -> Result<()> {
                     asm_files.push(source_path);
                 }
             }
-            if release > 0 {
-                build_asm(asm_files, output, false)?;
-            } else {
-                build_asm(asm_files, output, true)?;
-            }
+            // if release > 0 {
+            build_asm(asm_files, output, false)?;
+            // } else {
+            //     build_asm(asm_files, output, true)?;
+            // }
         }
     }
 

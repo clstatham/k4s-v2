@@ -1,20 +1,56 @@
-!ent %_start @ 0x40000000
-
-@pt4 align4096 resb 4096
-@pt3 align4096 resb 4096
-@pt2 align4096 resb 4096
-@pt1_0 align4096 resb 0x10000
-
+!ent %_start @ 0x100000
+!region 0x2200000 > 0x200000 : %start_high %kernel_main
+; !region 0x100000 > 0x100000 : %_start %bootloader_main
 %_start
-    call i64 %kernel_main
-    printi i32 ra
+    mov i64 sp $0x400000
+    mov i64 bp sp
+    call i64 %bootloader_main
     hlt
     und
+
+
+%write_pt
+    mov i64 pt rg
+    add i64 sp $8 ; pop return addr of %write_pt
+    or i64 sp $0x2000000
+    mov i64 rb %start_high
+    ; or i64 rb $0x2000000
+    printi i64 rb
+    enpt i64 rb
 
 %llvm_dbg_value
     ret
 
 %llvm_dbg_declare
+    ret
+
+%llvm_returnaddress
+    mov i64 ra r0
+    ret
+
+%llvm_usub_with_overflow_i64
+    mov i64 ra rg
+    sub i64 ra rh
+    ret
+
+%llvm_uadd_with_overflow_i64
+    mov i64 ra rg
+    add i64 ra rh
+    ret
+
+%llvm_umul_with_overflow_i64
+    mov i64 ra rg
+    mul i64 ra rh
+    ret
+
+%llvm_usub_with_overflow_i8
+    mov i8 ra rg
+    sub i8 ra rh
+    ret
+
+%llvm_uadd_with_overflow_i32
+    mov i32 ra rg
+    add i32 ra rh
     ret
 
 %printstrln_asm
@@ -26,7 +62,7 @@
     cmp i8 [rb] $0
     jeq i64 %printstrln_asm_ret
     printc i8 [rb]
-    add i64 rb $1
+    add i64 rb r1
     jmp i64 %printstrln_asm_loop
 %printstrln_asm_ret
     printc i8 $0xa ; newline
@@ -47,8 +83,8 @@
     cmp i64 rc rh
     jeq i64 %prinptrln_asm_ret
     printc i8 [rb]
-    add i64 rb $1
-    add i64 rc $1
+    add i64 rb r1
+    add i64 rc r1
     jmp i64 %printptrln_asm_loop
 %prinptrln_asm_ret
     printc i8 $0xa ; newline
@@ -74,9 +110,9 @@
     cmp i64 rc ri
     jeq i64 %llvm_memcpy_p0i8_p0i8_i64_end
     mov i8 [rb] [rd]
-    add i64 rc $1
-    add i64 rb $1
-    add i64 rd $1
+    add i64 rc r1
+    add i64 rb r1
+    add i64 rd r1
     jmp i64 %llvm_memcpy_p0i8_p0i8_i64_loop
 %llvm_memcpy_p0i8_p0i8_i64_end
     pop i64 rc
@@ -96,8 +132,8 @@
     cmp i64 rc ri
     jeq i64 %llvm_memset_p0i8_i64_end
     mov i8 [rb] rh
-    add i64 rc $1
-    add i64 rb $1
+    add i64 rc r1
+    add i64 rb r1
     jmp i64 %llvm_memset_p0i8_i64_loop
 %llvm_memset_p0i8_i64_end
     pop i64 rc
@@ -128,5 +164,15 @@
     ret
 
 %hlt
+    hlt
+    und
+
+%und
+    und
+
+
+%start_high
+    printi i64 $696969
+    call i64 %kernel_main
     hlt
     und

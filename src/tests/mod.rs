@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Result;
 
-use crate::k4s::contexts::{asm::AssemblyContext, llvm::LlvmContext, machine::MachineContext};
+use crate::k4s::contexts::{asm::AssemblyContext, llvm::LlvmContext};
 
 pub fn test_assemble() -> Result<()> {
     let mut asm = String::new();
@@ -23,14 +23,14 @@ pub fn test_assemble() -> Result<()> {
     Ok(())
 }
 
-pub fn test_run() -> Result<()> {
-    let mut program = vec![];
-    let mut file = File::open("target/test1.k4s")?;
-    file.read_to_end(&mut program)?;
-    let mut machine = MachineContext::new(&program, 0x1000000)?;
-    machine.run_until_hlt()?;
-    Ok(())
-}
+// pub fn test_run() -> Result<()> {
+//     let mut program = vec![];
+//     let mut file = File::open("target/test1.k4s")?;
+//     file.read_to_end(&mut program)?;
+//     let mut machine = MachineContext::new(&program, 0x1000000)?;
+//     machine.run_until_hlt()?;
+//     Ok(())
+// }
 
 // #[test]
 pub fn test_llvm() -> Result<()> {

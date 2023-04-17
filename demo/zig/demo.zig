@@ -1,6 +1,7 @@
 pub export fn demo(a: i64, b: *const i64) i64 {
     return a + b.*;
 }
+
 // start: zig or rust or C file
 
 // -> compiled by zig / cargo (rustc) / clang into
@@ -11,3 +12,8 @@ pub export fn demo(a: i64, b: *const i64) i64 {
 // -> generated k4sm assembly files + human-written
 //    k4sm assembly bootstrap are assembled into one
 //    binary
+
+// general llvm pipeline
+// front end (zig/rust/clang)
+// middle end (LLVM optimizers)
+// back end (codegen for x86/arm/k4s)

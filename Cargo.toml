@@ -19,8 +19,12 @@ rustc-hash = "1.1.0"
 anyhow = "1.0.70"
 env_logger = "0.10.0"
 log = "0.4.17"
-slint = "1.0.0"
+# slint = "1.0.0"
 clap = { version = "4.2.1", features = ["derive"] }
+dioxus = "0.3.2"
+dioxus-desktop = "0.3.0"
+tokio = { version = "1.27.0", features = ["full"] }
+fermi = "0.3.0"
 
 [profile.release]
 debug = 1

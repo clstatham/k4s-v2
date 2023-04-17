@@ -583,7 +583,7 @@ impl Expr {
                         Opcode::Mov,
                         InstrSize::I8,
                         Some(dest.storage().to_owned()),
-                        Some(Token::I8(1)),
+                        Some(Token::Register(Register::R1)),
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jmp,
@@ -596,7 +596,7 @@ impl Expr {
                         Opcode::Mov,
                         InstrSize::I8,
                         Some(dest.storage().to_owned()),
-                        Some(Token::I8(0)),
+                        Some(Token::Register(Register::R0)),
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jmp,
@@ -681,7 +681,7 @@ impl Expr {
                         Opcode::Mov,
                         InstrSize::I8,
                         Some(dest.storage().to_owned()),
-                        Some(Token::I8(1)),
+                        Some(Token::Register(Register::R1)),
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jmp,
@@ -694,7 +694,7 @@ impl Expr {
                         Opcode::Mov,
                         InstrSize::I8,
                         Some(dest.storage().to_owned()),
-                        Some(Token::I8(0)),
+                        Some(Token::Register(Register::R0)),
                     ))
                     .push_instr(Instr::new(
                         Opcode::Jmp,

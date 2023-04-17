@@ -125,6 +125,15 @@ impl Ssa {
                     op.agg_const(),
                 )
             }
+            Constant::IntToPtr(cast) => {
+                let op = Self::parse_const(&cast.operand, name.to_owned(), types, globals);
+                Self::new(
+                    name,
+                    cast.to_type.to_owned(),
+                    op.storage().to_owned(),
+                    op.agg_const(),
+                )
+            }
             Constant::GetElementPtr(gep) => {
                 let addr = Self::parse_const(&gep.address, name.to_owned(), types, globals);
                 let indices = gep
@@ -318,7 +327,10 @@ impl TypeExt for Type {
                     }
                 }
                 Type::PointerType { .. } => InstrSize::I64,
-                Type::IntegerType { bits } => InstrSize::from_integer_bits(*bits).unwrap(),
+                Type::IntegerType { bits } => {
+                    InstrSize::from_integer_bits((*bits).max(8).next_power_of_two())
+                        .unwrap_or_else(|| panic!("{:?}", bits))
+                }
                 ty => todo!("{:?}", ty),
             }
         }

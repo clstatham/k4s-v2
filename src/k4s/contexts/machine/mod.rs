@@ -1,12 +1,14 @@
-use std::{cmp::Ordering, fmt::{Write, Display}};
+use std::{cmp::Ordering, fmt::{Write, Display}, collections::{VecDeque, BTreeMap}};
 
 use anyhow::{Context, Error, Result};
-use rustc_hash::FxHashMap;
+
 
 use crate::k4s::{
     parsers::machine::{parse_debug_symbols, tags},
     Instr, InstrSig, InstrSize, Opcode, Primitive, Register, Token,
 };
+
+pub mod ram;
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Default)]
@@ -166,56 +168,11 @@ impl Display for Regs {
         )?;
         write!(
             f,
-            "bp={:016x} sp={:016x} pc={:016x} fl={:016x}",
-            self.bp, self.sp, self.pc, self.fl
+            "bp={:016x} sp={:016x} pc={:016x} fl={:016x} pt={:016x}",
+            self.bp, self.sp, self.pc, self.fl, self.pt
         )
     }
 }
-
-pub trait Ram {
-    fn peek(&self, size: InstrSize, addr: u64) -> Result<Token>;
-    fn poke(&mut self, t: &Token, addr: u64) -> Result<()>;
-}
-
-impl Ram for Box<[u8]> {
-    fn peek(&self, size: InstrSize, addr: u64) -> Result<Token> {
-        let addr = addr as usize;
-        if addr == 0 { return Err(Error::msg(format!("Attempt to read a size of {:?} at a null address", size))) }
-        if addr + size.in_bytes() > self.len() {
-            return Err(Error::msg(format!("Attempt to read a size of {:?} at address past the end of memory: {:#x}", size, addr)))
-        }
-        match size {
-            InstrSize::Unsized => Err(Error::msg(format!("Attempt to read a size of zero at: {:#x}", addr))),
-            InstrSize::I8 => Ok(Token::I8(self[addr])),
-            InstrSize::I16 => Ok(Token::I16(u16::from_bytes(&self[addr..addr + 2]).unwrap())),
-            InstrSize::I32 => Ok(Token::I32(u32::from_bytes(&self[addr..addr + 4]).unwrap())),
-            InstrSize::F32 => Ok(Token::F32(f32::from_bytes(&self[addr..addr + 4]).unwrap())),
-            InstrSize::I64 => Ok(Token::I64(u64::from_bytes(&self[addr..addr + 8]).unwrap())),
-            InstrSize::F64 => Ok(Token::F64(f64::from_bytes(&self[addr..addr + 8]).unwrap())),
-            InstrSize::I128 => Ok(Token::I128(u128::from_bytes(&self[addr..addr + 16]).unwrap())),
-        }
-    }
-
-    fn poke(&mut self, t: &Token, addr: u64) -> Result<()> {
-        let addr = addr as usize;
-        if addr == 0 { return Err(Error::msg(format!("Attempt to write {:?} at null address", t))) }
-        if addr + t.value_size_in_bytes() > self.len() {
-            return Err(Error::msg(format!("Attempt to write {:?} at address past the end of memory: {:#x}", t, addr)))
-        }
-        match t {
-            Token::I8(v) => self[addr] = *v,
-            Token::I16(v) => self[addr..addr + 2].copy_from_slice(&v.to_bytes()),
-            Token::I32(v) => self[addr..addr + 4].copy_from_slice(&v.to_bytes()),
-            Token::F32(v) => self[addr..addr + 4].copy_from_slice(&v.to_bytes()),
-            Token::I64(v) => self[addr..addr + 8].copy_from_slice(&v.to_bytes()),
-            Token::F64(v) => self[addr..addr + 8].copy_from_slice(&v.to_bytes()),
-            Token::I128(v) => self[addr..addr + 16].copy_from_slice(&v.to_bytes()),
-            _ => return Err(Error::msg(format!("Invalid token for writing: {:?}", t))),
-        }
-        Ok(())
-    }
-}
-
 pub enum MachineState {
     Continue,
     ContDontUpdatePc, // used for jumps, calls, rets
@@ -225,55 +182,68 @@ pub enum MachineState {
 pub struct MachineContext {
     pub ram: Box<[u8]>,
     pub regs: Regs,
-    pub debug_symbols: FxHashMap<u64, String>,
-    pub instr_history: Vec<String>,
+    pub debug_symbols: BTreeMap<u64, String>,
+    pub instr_history: VecDeque<String>,
     pub output_history: String,
     pub stack_frame: Vec<(u64, u64)>,
+    pub call_stack: Vec<String>,
     pub error: Option<String>,
     pub call_depth: usize,
 }
 
 impl MachineContext {
-    pub fn new(program: &[u8], mem_size: usize) -> Result<MachineContext> {
+    pub fn new(programs: Vec<Vec<u8>>, mem_size: usize) -> Result<MachineContext> {
         let mut ram = vec![0x00; mem_size].into_boxed_slice();
         let mut regs = Regs::default();
-        if &program[..tags::HEADER_MAGIC.len()] != tags::HEADER_MAGIC {
-            return Err(Error::msg(format!(
-                "Invalid k4s header tag: {:?} (expected {:?})",
-                &program[..tags::HEADER_MAGIC.len()],
-                tags::HEADER_MAGIC
-            )));
+        let mut first_entry_point = None;
+        let mut all_debug_symbols = BTreeMap::new();
+        for program in programs {
+            if &program[..tags::HEADER_MAGIC.len()] != tags::HEADER_MAGIC {
+                return Err(Error::msg(format!(
+                    "Invalid k4s header tag: {:?} (expected {:?})",
+                    &program[..tags::HEADER_MAGIC.len()],
+                    tags::HEADER_MAGIC
+                )));
+            }
+            let program = &program[tags::HEADER_MAGIC.len()..];
+            if &program[..tags::HEADER_ENTRY_POINT.len()] != tags::HEADER_ENTRY_POINT {
+                return Err(Error::msg(format!(
+                    "Invalid k4s entry point tag: {:?} (expected {:?})",
+                    &program[..tags::HEADER_ENTRY_POINT.len()],
+                    tags::HEADER_ENTRY_POINT
+                )));
+            }
+            let program = &program[tags::HEADER_ENTRY_POINT.len()..];
+            let entry_point = u64::from_bytes(&program[..8]).unwrap();
+            if first_entry_point.is_none() {
+                first_entry_point = Some(entry_point);
+            }
+            let program = &program[8..];
+    
+            let (program, debug_symbols) =
+                parse_debug_symbols(program).map_err(|err| err.to_owned())?;
+            for (adr, sym) in debug_symbols {
+                all_debug_symbols.insert(adr, sym);
+            }
+    
+            if &program[..tags::HEADER_END.len()] != tags::HEADER_END {
+                return Err(Error::msg("Invalid k4s header end tag"));
+            }
+            let program = &program[tags::HEADER_END.len()..];
+            ram[..program.len()].copy_from_slice(program);
         }
-        let program = &program[tags::HEADER_MAGIC.len()..];
-        if &program[..tags::HEADER_ENTRY_POINT.len()] != tags::HEADER_ENTRY_POINT {
-            return Err(Error::msg(format!(
-                "Invalid k4s entry point tag: {:?} (expected {:?})",
-                &program[..tags::HEADER_ENTRY_POINT.len()],
-                tags::HEADER_ENTRY_POINT
-            )));
-        }
-        let program = &program[tags::HEADER_ENTRY_POINT.len()..];
-        let entry_point = u64::from_bytes(&program[..8]).unwrap();
-        let program = &program[8..];
-
-        let (program, debug_symbols) =
-            parse_debug_symbols(program).map_err(|err| err.to_owned())?;
-
-        if &program[..tags::HEADER_END.len()] != tags::HEADER_END {
-            return Err(Error::msg("Invalid k4s header end tag"));
-        }
-        let program = &program[tags::HEADER_END.len()..];
-        ram[entry_point as usize..entry_point as usize + program.len()].copy_from_slice(program);
-        regs.pc = entry_point;
-        regs.sp = ram.len() as u64;
+        
+        // regs.bp = entry_point;
+        regs.pc = first_entry_point.unwrap();
 
         regs.rg = mem_size as u64;
 
         Ok(MachineContext {
             ram,
             regs,
-            debug_symbols,
-            instr_history: Vec::new(),
+            debug_symbols: all_debug_symbols,
+            instr_history: VecDeque::new(),
+            call_stack: Vec::new(),
             stack_frame: Vec::new(),
             output_history: String::new(),
             error: None,
@@ -281,40 +251,41 @@ impl MachineContext {
         })
     }
 
-    pub fn step(&mut self) -> Result<MachineState> {
-        let chunk = self.ram.get(self.regs.pc as usize..self.regs.pc as usize + 64).ok_or(Error::msg("PC register out of bounds").context(format!("PC = {:x}", self.regs.pc)))?;
+    pub fn step(&mut self, update_dbg_info: bool) -> Result<MachineState> {
+        // let pc = self.translate_addr(self.regs.pc).unwrap();
+        let pc = self.regs.pc;
+        let chunk = self.peek_phys_range(pc, pc + 64)?;
         let (_, instr) = Instr::disassemble_next(chunk)
             .map_err(|err| err.to_owned())
             .context(format!(
-                "Error parsing instruction\nFirst 16 bytes:\n{:x?}\nor\n{:?}",
+                "Error parsing instruction\nPC={:x} (-> {:x})\nFirst 16 bytes:\n{:x?}\nor\n{:?}",
+                self.regs.pc,
+                pc,
                 &chunk[..16],
                 &chunk[..16]
             ))?;
 
-        let pc = self.regs.pc;
-        log::debug!("\n{}", self.regs);
-        if let Some(tok) = &instr.arg0 {
-            let tok_eval = self
-                .eval_token(tok.to_owned(), instr.size).unwrap_or(Token::Unknown);
-            log::debug!("arg0 = {:?} ({:x?})", tok, tok_eval);
+        // let pc = self.regs.pc;
+        // log::trace!("\n{}", self.regs);
+        // if let Some(tok) = &instr.arg0 {
+        //     let tok_eval = self
+        //         .eval_token(tok.to_owned(), instr.size).unwrap_or(Token::Unknown);
+        //     log::trace!("arg0 = {:?} ({:x?})", tok, tok_eval);
+        // }
+        // if let Some(tok) = &instr.arg1 {
+        //     let tok_eval = self
+        //         .eval_token(tok.to_owned(), instr.size).unwrap_or(Token::Unknown);
+        //     log::trace!("arg1 = {:?} ({:x?})", tok, tok_eval);
+        // }
+        self.instr_history.push_back(format!("{}{}", "    ".repeat(self.call_depth), instr.display_with_symbols(&self.debug_symbols)));
+        if self.instr_history.len() > 1000 {
+            self.instr_history.pop_front();
         }
-        if let Some(tok) = &instr.arg1 {
-            let tok_eval = self
-                .eval_token(tok.to_owned(), instr.size).unwrap_or(Token::Unknown);
-            log::debug!("arg1 = {:?} ({:x?})", tok, tok_eval);
+        if update_dbg_info {
+            self.update_dbg_info()?;
         }
         
-        self.instr_history.push(format!("{}{}", "    ".repeat(self.call_depth), instr.display_with_symbols(&self.debug_symbols)));
-        self.stack_frame = {
-            let bp = self.regs.bp - self.regs.bp % 8;
-            let sp = self.regs.sp - self.regs.sp % 8;
-            let mut out = Vec::new();
-            for adr in (sp..=bp).rev().step_by(8) {
-                out.push((bp - adr, self.ram.peek(InstrSize::I64, adr).context("Error generating stack frame info")?.as_integer().unwrap()));
-            }
-            out
-        };
-        log::debug!(
+        log::trace!(
             "{:016x} --> {}",
             pc,
             &instr.display_with_symbols(&self.debug_symbols)
@@ -326,24 +297,71 @@ impl MachineContext {
                 Ok(MachineState::Continue)
             }
             Ok(MachineState::ContDontUpdatePc) => {
-                if self.regs.pc == 0 {
-                    self.error = Some("Jump to null address".into());
-                    Err(Error::msg("Jump to null address"))
-                } else {
-                    Ok(MachineState::Continue)
-                }
+                // if self.regs.pc == 0 {
+                //     self.error = Some("Jump to null address".into());
+                //     Err(Error::msg("Jump to null address"))
+                // } else {
+                //     Ok(MachineState::Continue)
+                // }
+                Ok(MachineState::Continue)
             }
             Ok(MachineState::Halt) => Ok(MachineState::Halt),
             Err(e) => {
-                self.error = Some(e.to_string());
+                self.error = Some(e.root_cause().to_string());
                 Err(e)
             }
         }
     }
 
+    pub fn update_dbg_info(&mut self) -> Result<()> {
+        self.stack_frame = {
+            let bp = self.regs.bp - self.regs.bp % 8;
+            let sp = self.regs.sp - self.regs.sp % 8;
+            let mut out = Vec::new();
+            for adr in (sp..=bp).rev().step_by(8) {
+                out.push((bp - adr, self.peek(InstrSize::I64, adr).unwrap_or(Token::I64(0)).as_integer().unwrap()));
+            }
+            out
+        };
+        self.call_stack = {
+            let mut out = Vec::new();
+            let mut bp = self.regs.bp;
+            let mut depth = 16;
+            while bp != 0 && depth > 0 {
+                let rip_rbp = bp + 8;
+                let rip = self.peek(InstrSize::I64, rip_rbp).unwrap_or(Token::I64(0)).as_integer::<u64>().unwrap();
+                if rip == 0 {
+                    break;
+                }
+                bp = self.peek(InstrSize::I64, bp).unwrap().as_integer::<u64>().unwrap();
+                let sym = {
+                    let mut it = self.debug_symbols.iter().peekable();
+                    let mut out_sym = None;
+                    while let Some((addr, sym)) = it.next() {
+                        if let Some((next_addr, _)) = it.peek() {
+                            if (addr..*next_addr).contains(&&rip) {
+                                out_sym = Some(sym);
+                                break;
+                            }
+                        } else if *addr <= rip {
+                            out_sym = Some(sym);
+                            break;
+                        }
+                    }
+                    out_sym.unwrap_or(&"(unknown)".to_owned()).to_owned()
+                };
+                out.push(sym);
+                depth -= 1;
+            }
+            
+            out
+        };
+        Ok(())
+    }
+
     pub fn run_until_hlt(&mut self) -> Result<()> {
         loop {
-            if let MachineState::Halt = self.step()? {
+            if let MachineState::Halt = self.step(false)? {
                 return Ok(());
             }
         }
@@ -351,11 +369,11 @@ impl MachineContext {
 
     fn push(&mut self, val: Token) -> Result<()> {
         self.regs.sp -= val.value_size_in_bytes() as u64;
-        self.ram.poke(&val, self.regs.sp).context(format!("Error pushing `{}` to stack", val))
+        self.poke(&val, self.regs.sp).context(format!("Error pushing `{}` to stack", val))
     }
 
     fn pop(&mut self, size: InstrSize) -> Result<Token> {
-        let val = self.ram.peek(size, self.regs.sp)?;
+        let val = self.peek(size, self.regs.sp)?;
         self.regs.sp += val.value_size_in_bytes() as u64;
         Ok(val)
     }
@@ -386,9 +404,9 @@ impl MachineContext {
     fn peek_addr(&self, token: Token, target_size: InstrSize) -> Result<Token> {
         if let Token::Addr(ref tok) = token {
             if let Token::I64(addr) = **tok {
-                self.ram.peek(target_size, addr)
+                self.peek(target_size, addr)
             } else if let Token::Register(reg) = **tok {
-                self.ram.peek(
+                self.peek(
                     target_size,
                     self.regs
                         .get(reg, InstrSize::I64).unwrap() // safe since regs are always 64 bit
@@ -475,9 +493,9 @@ impl MachineContext {
                         Token::Register(reg) => self.regs.get(reg, InstrSize::I64).unwrap().as_integer().unwrap(),
                         _ => addr.as_integer().unwrap(),
                     };
-                    let a = self.ram.peek(instr.size, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
+                    let a = self.peek(instr.size, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
                     let a = f(&a)?;
-                    self.ram.poke(&a, addr).context(format!("Error assigning lvalue `{}` with `{}`", lvalue, a))?;
+                    self.poke(&a, addr).context(format!("Error assigning lvalue `{}` with `{}`", lvalue, a))?;
                     Ok(())
                 }
                 _ => Err(Error::msg(format!(
@@ -506,9 +524,9 @@ impl MachineContext {
                     let addr = self.offset_to_addr(lvalue.to_owned());
                     let addr = self.addr_to_value(addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?.as_integer().unwrap();
                     // let value = self.addr_to_value(addr, instr.size).unwrap().as_integer().unwrap();
-                    let a = self.ram.peek(instr.size, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
+                    let a = self.peek(instr.size, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
                     let a = f(&a).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
-                    self.ram.poke(&a, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
+                    self.poke(&a, addr).context(format!("Error assigning lvalue `{}` with the result of `{}`", lvalue, instr))?;
                     Ok(())
                 }
                 _ => Err(Error::msg(format!(
@@ -617,6 +635,12 @@ impl MachineContext {
             }
             Opcode::Ret => {
                 self.regs.pc = self.pop(InstrSize::I64)?.as_integer().unwrap();
+                self.call_depth -= 1;
+                return Ok(MachineState::ContDontUpdatePc);
+            }
+            Opcode::Enpt => {
+                self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+                self.regs.fl.set(Fl::PT_ENABLED, true);
                 self.call_depth -= 1;
                 return Ok(MachineState::ContDontUpdatePc);
             }

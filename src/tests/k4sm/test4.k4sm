@@ -1,0 +1,15 @@
+!ent %_start @ 0x1000
+!region 0x2000 > 0x2000 : @regiontestdata
+
+%_start
+    printi i64 %_start
+    printi i64 @regiontestdata
+    mov i64 ra @regiontestdata
+    printi i64 [ra]
+    hlt
+
+@regiontestdata align1 $42
+
+; %regiontest
+;     printi i64 $420
+;     ret
