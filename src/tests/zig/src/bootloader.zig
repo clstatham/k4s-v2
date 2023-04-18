@@ -7,7 +7,7 @@ extern fn boot_printi(a: u64) void;
 extern fn boot_printc(a: u8) void;
 extern fn boot_hlt() noreturn;
 extern fn boot_und() noreturn;
-extern fn boot_write_pt(pt: u64) noreturn;
+extern fn boot_write_pt(pt: u64, fa_bump: u64) noreturn;
 
 fn boot_println(s: []const u8) void {
     for (s) |c| {
@@ -25,7 +25,7 @@ const FRAME_ALLOC_START: u64 = KERNEL_END_PHYS + PAGE_SIZE;
 const KERNEL_END_VIRT: u64 = KERNEL_END_PHYS | PHYS_OFFSET;
 const ENTRIES_PER_TABLE: usize = 512; // each entry is a u64 (8 bytes)
 
-const Frame = packed struct {
+const BootFrame = packed struct {
     const Self = @This();
     value: u64,
 
@@ -41,7 +41,7 @@ const Frame = packed struct {
     }
 };
 
-const VirtAddr = struct {
+const BootVirtAddr = struct {
     const Self = @This();
     value: u64,
 
@@ -72,46 +72,35 @@ const VirtAddr = struct {
     }
 };
 
-pub fn PageTable(comptime Level: u8) type {
+pub fn BootPageTable(comptime Level: u8) type {
     return packed struct {
         const Self = @This();
-        table: *[ENTRIES_PER_TABLE]Frame,
+        table: *[ENTRIES_PER_TABLE]BootFrame,
 
-        pub noinline fn init(frame: Frame) Self {
-            return Self{ .table = @intToPtr(*[ENTRIES_PER_TABLE]Frame, frame.addr_value()) };
+        pub noinline fn init(frame: BootFrame) Self {
+            return Self{ .table = @intToPtr(*[ENTRIES_PER_TABLE]BootFrame, frame.addr_value()) };
         }
 
-        pub noinline fn next_table(self: *const Self, index: usize) ?PageTable(Level - 1) {
+        pub noinline fn next_table(self: *const Self, index: usize) ?BootPageTable(Level - 1) {
             if (self.table[index].pt_flags() & 0b1 != 0) {
-                return PageTable(Level - 1).init(self.table[index]);
+                return BootPageTable(Level - 1).init(self.table[index]);
             } else {
                 return null;
             }
         }
 
-        pub noinline fn next_table_create(self: *Self, index: usize, flags: u64) PageTable(Level - 1) {
+        pub noinline fn next_table_create(self: *Self, index: usize, flags: u64) BootPageTable(Level - 1) {
             return self.next_table(index) orelse {
                 const allocated = frame_alloc.alloc();
-                const frame = Frame.init(allocated | flags | 0b1);
+                const frame = BootFrame.init(allocated | flags | 0b1);
                 self.table[index] = frame;
-                return PageTable(Level - 1).init(frame);
+                return BootPageTable(Level - 1).init(frame);
             };
         }
     };
 }
 
-pub noinline fn translate(pt4: *PageTable(4), virt: VirtAddr) ?u64 {
-    const pt3 = pt4.next_table(virt.pt4_idx()) orelse return null;
-    const pt2 = pt3.next_table(virt.pt3_idx()) orelse return null;
-    const pt1 = pt2.next_table(virt.pt2_idx()) orelse return null;
-    const frame = pt1.table[virt.pt1_idx()];
-    if (frame.pt_flags() & 0b1 == 0) {
-        return null;
-    }
-    return frame.addr_value() + virt.page_offset();
-}
-
-pub noinline fn map_to(pt4: *PageTable(4), virt: VirtAddr, frame: Frame, flags: u64) void {
+pub noinline fn boot_map_to(pt4: *BootPageTable(4), virt: BootVirtAddr, frame: BootFrame, flags: u64) void {
     var pt3 = pt4.next_table_create(virt.pt4_idx(), flags);
     var pt2 = pt3.next_table_create(virt.pt3_idx(), flags);
     var pt1 = pt2.next_table_create(virt.pt2_idx(), flags);
@@ -119,7 +108,7 @@ pub noinline fn map_to(pt4: *PageTable(4), virt: VirtAddr, frame: Frame, flags: 
     pt1.table[virt.pt1_idx()].value |= flags | 0b1;
 }
 
-const FrameAllocator = struct {
+const BootFrameAllocator = struct {
     const Self = @This();
     bump: u64,
 
@@ -134,27 +123,19 @@ const FrameAllocator = struct {
     }
 };
 
-var frame_alloc: FrameAllocator = FrameAllocator.init();
+var frame_alloc: BootFrameAllocator = BootFrameAllocator.init();
 
-noinline fn setup_paging(pt4_frame: Frame) PageTable(4) {
-    var pt = PageTable(4).init(pt4_frame);
+noinline fn setup_paging(pt4_frame: BootFrame) BootPageTable(4) {
+    var pt = BootPageTable(4).init(pt4_frame);
     var ident_frame: u64 = 0x100000;
     while (ident_frame < KERNEL_OFFSET_PHYS) {
-        // boot_printi(ident_frame);
-        map_to(&pt, VirtAddr.init(ident_frame), Frame.init(ident_frame), 0b1);
-        map_to(&pt, VirtAddr.init(ident_frame | PHYS_OFFSET), Frame.init(ident_frame), 0b1);
+        boot_map_to(&pt, BootVirtAddr.init(ident_frame), BootFrame.init(ident_frame), 0b1);
+        boot_map_to(&pt, BootVirtAddr.init(ident_frame | PHYS_OFFSET), BootFrame.init(ident_frame), 0b1);
         ident_frame += PAGE_SIZE;
     }
-    // ident_frame = FRAME_ALLOC_START;
-    // while (ident_frame < FRAME_ALLOC_START + 0x100000) {
-    //     // boot_printi(ident_frame);
-    //     map_to(&pt, VirtAddr.init(ident_frame), Frame.init(ident_frame), 0b1);
-    //     ident_frame += PAGE_SIZE;
-    // }
     var frame: u64 = KERNEL_OFFSET_PHYS;
-    while (frame < KERNEL_END_PHYS) {
-        // boot_printi(frame);
-        map_to(&pt, VirtAddr.init(frame | PHYS_OFFSET), Frame.init(frame), 0b1);
+    while (frame < frame_alloc.bump) {
+        boot_map_to(&pt, BootVirtAddr.init(frame | PHYS_OFFSET), BootFrame.init(frame), 0b1);
         frame += PAGE_SIZE;
     }
 
@@ -164,14 +145,14 @@ noinline fn setup_paging(pt4_frame: Frame) PageTable(4) {
 pub export fn bootloader_main(mem_size: u64) noreturn {
     boot_println("Physical memory size is:");
     boot_printi(mem_size);
-    frame_alloc = FrameAllocator.init();
-    const pt4_frame = Frame.init(frame_alloc.alloc());
+    frame_alloc = BootFrameAllocator.init();
+    const pt4_frame = BootFrame.init(frame_alloc.alloc());
     boot_println("Creating page table at:");
     boot_printi(pt4_frame.addr_value());
     var page_table = setup_paging(pt4_frame);
     _ = page_table;
     boot_println("Enabling paging.");
-    boot_write_pt(pt4_frame.addr_value());
+    boot_write_pt(pt4_frame.addr_value(), frame_alloc.bump);
 }
 
 pub fn panic(msg: []const u8, stack_trace: ?*builtin.StackTrace) noreturn {

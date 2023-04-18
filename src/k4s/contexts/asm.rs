@@ -385,6 +385,12 @@ impl AssemblyContext {
                             if !existing_includes.contains_key(path)
                                 && !self.included_modules_regions.contains_key(path)
                             {
+                                if self.included_modules_regions.contains_key(path) {
+                                    return Err(Error::msg(format!(
+                                        "Duplicate include tag found: {}",
+                                        path
+                                    )));
+                                }
                                 self.included_modules_regions
                                     .insert(path.to_owned(), region.to_owned());
                             }
@@ -404,6 +410,12 @@ impl AssemblyContext {
                                 virt: *virt,
                                 load: *load,
                             };
+                            if self.regions.contains_key(&region.tag) {
+                                return Err(Error::msg(format!(
+                                    "Duplicate region tag found: {}",
+                                    region.tag
+                                )));
+                            }
                             self.regions.insert(region.tag.to_owned(), region);
                         } else {
                             return Err(Error::msg(
@@ -439,6 +451,12 @@ impl AssemblyContext {
                     if in_function {
                         in_function = false;
                         let func = current_function.as_ref().unwrap().to_owned();
+                        if self.blocks.contains_key(&func.label.name()) {
+                            return Err(Error::msg(format!(
+                                "Duplicate symbol found: {}",
+                                func.label.name()
+                            )));
+                        }
                         self.blocks.insert(func.label.name(), func);
                         current_function = None;
                     }
@@ -499,6 +517,12 @@ impl AssemblyContext {
                 }
                 self.region_mappings
                     .insert(block_name.to_owned(), region.to_owned());
+                if self.blocks.contains_key(block_name) {
+                    return Err(Error::msg(format!(
+                        "Duplicate symbol found: {}",
+                        block_name
+                    )));
+                }
                 self.blocks.insert(block_name.to_owned(), block.to_owned());
             }
             for data in ctx.data_lines.iter_mut() {
@@ -512,11 +536,6 @@ impl AssemblyContext {
                 }
             }
             self.data_lines.extend_from_slice(&ctx.data_lines);
-            // included_asm_by_region
-            //     .entry(region.to_owned())
-            //     .or_insert(Vec::new())
-            //     .push(ctx);
-            // let blocks = ctx.blocks.values().cloned().collect::<Vec<_>>();
         }
 
         let mut blocks = self.blocks.clone();

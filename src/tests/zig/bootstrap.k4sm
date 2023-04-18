@@ -85,14 +85,14 @@
     mov i64 rb rg ; dest
     ; ri = len
     mov i64 rc $0
-%llvm_memset_p0i8_i64_loop
+%bootloader_bc_llvm_memset_p0i8_i64_loop
     cmp i64 rc ri
-    jeq i64 %llvm_memset_p0i8_i64_end
+    jeq i64 %bootloader_bc_llvm_memset_p0i8_i64_end
     mov i8 [rb] rh
     add i64 rc r1
     add i64 rb r1
-    jmp i64 %llvm_memset_p0i8_i64_loop
-%llvm_memset_p0i8_i64_end
+    jmp i64 %bootloader_bc_llvm_memset_p0i8_i64_loop
+%bootloader_bc_llvm_memset_p0i8_i64_end
     pop i64 rc
     pop i64 rb
     pop i64 bp

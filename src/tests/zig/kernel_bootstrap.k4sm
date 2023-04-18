@@ -20,3 +20,24 @@
 %kernel_bc_und
     und
     ret
+
+
+%kernel_bc_llvm_memset_p0i8_i64
+    push i64 bp
+    push i64 rb
+    push i64 rc
+    mov i64 rb rg ; dest
+    ; ri = len
+    mov i64 rc $0
+%kernel_bc_llvm_memset_p0i8_i64_loop
+    cmp i64 rc ri
+    jeq i64 %kernel_bc_llvm_memset_p0i8_i64_end
+    mov i8 [rb] rh
+    add i64 rc r1
+    add i64 rb r1
+    jmp i64 %kernel_bc_llvm_memset_p0i8_i64_loop
+%kernel_bc_llvm_memset_p0i8_i64_end
+    pop i64 rc
+    pop i64 rb
+    pop i64 bp
+    ret

@@ -1,18 +1,331 @@
+@kernel.bc_global_5 align8 resb 0
+@kernel.bc_global_5_elem0 align8 (0+@kernel_bc_global_4)
+@kernel.bc_global_5_elem1 align8 $13
+@kernel.bc_global_6 align8 "\x45\x72\x72\x6f\x72\x20\x74\x72\x61\x6e\x73\x6c\x61\x74\x69\x6e\x67\x20\x30\x78\x62\x61\x61\x64\x66\x30\x30\x64\x00"
 @kernel.bc_global_0 align8 "\x50\x61\x67\x69\x6e\x67\x20\x69\x73\x20\x65\x6e\x61\x62\x6c\x65\x64\x21\x00"
+@kernel.bc_global_3 align8 resb 0
+@kernel.bc_global_3_elem0 align8 (0+@kernel_bc_global_2)
+@kernel.bc_global_3_elem1 align8 $17
+@kernel.bc_global_4 align8 "\x30\x78\x62\x61\x61\x64\x66\x30\x30\x64\x20\x3d\x3e\x00"
+@kernel.bc_global_1 align8 resb 0
+@kernel.bc_global_1_elem0 align8 (0+@kernel_bc_global_0)
+@kernel.bc_global_1_elem1 align8 $18
+@kernel.bc_global_2 align8 "\x4d\x61\x70\x70\x69\x6e\x67\x20\x74\x68\x65\x20\x54\x48\x49\x4e\x47\x00"
+@kernel.bc_global_7 align8 resb 0
+@kernel.bc_global_7_elem0 align8 (0+@kernel_bc_global_6)
+@kernel.bc_global_7_elem1 align8 $28
+%map_to
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $288
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    mov i64 [-32+bp] rj
+    jmp i64 %map_to_Entry
+%map_to_Entry
+;
+;%pt3 = alloca %PageTable(3), align 1
+    mov i64 [-48+bp] bp
+    sub i64 [-48+bp] $40
+;
+;%pt2 = alloca %PageTable(2), align 1
+    mov i64 [-64+bp] bp
+    sub i64 [-64+bp] $56
+;
+;%pt1 = alloca %PageTable(1), align 8
+    mov i64 [-80+bp] bp
+    sub i64 [-80+bp] $72
+;
+;%4 = bitcast %VirtAddr* %1 to i64*
+    mov i64 [-88+bp] [-16+bp]
+;
+;%5 = load i64* %4, align 8
+    mov i64 rc [-88+bp]
+    mov i64 [-96+bp] [rc]
+;
+;%6 = lshr i64 %5, i64 39
+    mov i64 [-104+bp] [-96+bp]
+    shr i64 [-104+bp] $39
+;
+;%7 = and i64 %6, i64 511
+    mov i64 [-112+bp] [-104+bp]
+    and i64 [-112+bp] $511
+;
+;call @PageTable(4).next_table_create(%PageTable(3)* %pt3, %PageTable(4)* %0, i64 %7, %FrameAllocator* %3)
+    mov i64 rg [-48+bp]
+    mov i64 rh [-8+bp]
+    mov i64 ri [-112+bp]
+    mov i64 rj [-32+bp]
+    call i64 %PageTable_4__next_table_create
+;
+;%8 = load i64* %4, align 8
+    mov i64 rc [-88+bp]
+    mov i64 [-120+bp] [rc]
+;
+;%9 = lshr i64 %8, i64 30
+    mov i64 [-128+bp] [-120+bp]
+    shr i64 [-128+bp] $30
+;
+;%10 = and i64 %9, i64 511
+    mov i64 [-136+bp] [-128+bp]
+    and i64 [-136+bp] $511
+;
+;call @PageTable(3).next_table_create(%PageTable(2)* %pt2, %PageTable(3)* %pt3, i64 %10, %FrameAllocator* %3)
+    mov i64 rg [-64+bp]
+    mov i64 rh [-48+bp]
+    mov i64 ri [-136+bp]
+    mov i64 rj [-32+bp]
+    call i64 %PageTable_3__next_table_create
+;
+;%11 = load i64* %4, align 8
+    mov i64 rc [-88+bp]
+    mov i64 [-144+bp] [rc]
+;
+;%12 = lshr i64 %11, i64 21
+    mov i64 [-152+bp] [-144+bp]
+    shr i64 [-152+bp] $21
+;
+;%13 = and i64 %12, i64 511
+    mov i64 [-160+bp] [-152+bp]
+    and i64 [-160+bp] $511
+;
+;call @PageTable(2).next_table_create(%PageTable(1)* %pt1, %PageTable(2)* %pt2, i64 %13, %FrameAllocator* %3)
+    mov i64 rg [-80+bp]
+    mov i64 rh [-64+bp]
+    mov i64 ri [-160+bp]
+    mov i64 rj [-32+bp]
+    call i64 %PageTable_2__next_table_create
+;
+;%14 = bitcast %PageTable(1)* %pt1 to [512 x %Frame]**
+    mov i64 [-168+bp] [-80+bp]
+;
+;%15 = load i64* %4, align 8
+    mov i64 rc [-88+bp]
+    mov i64 [-176+bp] [rc]
+;
+;%16 = lshr i64 %15, i64 12
+    mov i64 [-184+bp] [-176+bp]
+    shr i64 [-184+bp] $12
+;
+;%17 = and i64 %16, i64 511
+    mov i64 [-192+bp] [-184+bp]
+    and i64 [-192+bp] $511
+;
+;%18 = load [512 x %Frame]** %14, align 8
+    mov i64 rc [-168+bp]
+    mov i64 [-200+bp] [rc]
+;
+;%19 = bitcast %Frame* %2 to i64*
+    mov i64 [-208+bp] [-24+bp]
+;
+;%20 = getelementptr inbounds [512 x %Frame]* %18, i64 0, i64 %17, i32 0
+    mov i64 [-216+bp] [-200+bp]
+    mov i64 rc [-192+bp]
+    smul i64 rc $8
+    sadd i64 [-216+bp] rc
+    mov i64 [-224+bp] [-216+bp]
+;
+;%21 = load i64* %19, align 1
+    mov i64 rc [-208+bp]
+    mov i64 [-232+bp] [rc]
+;
+;store i64 %21, i64* %20, align 1
+    mov i64 rc [-224+bp]
+    mov i64 [rc] [-232+bp]
+;
+;%22 = load i64* %4, align 8
+    mov i64 rc [-88+bp]
+    mov i64 [-240+bp] [rc]
+;
+;%23 = lshr i64 %22, i64 12
+    mov i64 [-248+bp] [-240+bp]
+    shr i64 [-248+bp] $12
+;
+;%24 = and i64 %23, i64 511
+    mov i64 [-256+bp] [-248+bp]
+    and i64 [-256+bp] $511
+;
+;%25 = getelementptr inbounds [512 x %Frame]* %18, i64 0, i64 %24, i32 0
+    mov i64 [-264+bp] [-200+bp]
+    mov i64 rc [-256+bp]
+    smul i64 rc $8
+    sadd i64 [-264+bp] rc
+    mov i64 [-272+bp] [-264+bp]
+;
+;%26 = load i64* %25, align 1
+    mov i64 rc [-272+bp]
+    mov i64 [-280+bp] [rc]
+;
+;%27 = or i64 %26, i64 1
+    mov i64 [-288+bp] [-280+bp]
+    or i64 [-288+bp] $1
+;
+;store i64 %27, i64* %25, align 1
+    mov i64 rc [-272+bp]
+    mov i64 [rc] [-288+bp]
+    mov i64 rb %map_to_Entry
+;ret void
+    jmp i64 %map_to_ret
+%map_to_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
 %kernel_main
     push i64 bp
     mov i64 bp sp
-    sub i64 sp $8
+    sub i64 sp $240
     mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
     jmp i64 %kernel_main_Entry
 %kernel_main_Entry
 ;
-;tail call @println()
+;%const = bitcast i64 3131961357 to i64
+    mov i64 [-24+bp] $3131961357
+;
+;%frame_alloc = alloca %FrameAllocator, align 8
+    mov i64 [-40+bp] bp
+    sub i64 [-40+bp] $32
+;
+;%2 = alloca %Frame, align 8
+    mov i64 [-56+bp] bp
+    sub i64 [-56+bp] $48
+;
+;%page_table = alloca %PageTable(4), align 1
+    mov i64 [-72+bp] bp
+    sub i64 [-72+bp] $64
+;
+;%3 = alloca %VirtAddr, align 8
+    mov i64 [-88+bp] bp
+    sub i64 [-88+bp] $80
+;
+;%4 = alloca %Frame, align 8
+    mov i64 [-104+bp] bp
+    sub i64 [-104+bp] $96
+;
+;%5 = alloca %VirtAddr, align 8
+    mov i64 [-120+bp] bp
+    sub i64 [-120+bp] $112
+;
+;%trans = alloca %?u64, align 8
+    mov i64 [-144+bp] bp
+    sub i64 [-144+bp] $136
+;
+;tail call @println(%[]u8* @global_1)
+    mov i64 rg @kernel_bc_global_1
     call i64 %println
+;
+;%6 = bitcast %FrameAllocator* %frame_alloc to i64*
+    mov i64 [-152+bp] [-40+bp]
+;
+;store i64 %1, i64* %6, align 8
+    mov i64 rc [-152+bp]
+    mov i64 [rc] [-16+bp]
+;
+;%7 = bitcast %Frame* %2 to i64*
+    mov i64 [-160+bp] [-56+bp]
+;
+;store i64 %0, i64* %7, align 8
+    mov i64 rc [-160+bp]
+    mov i64 [rc] [-8+bp]
+;
+;%8 = bitcast %PageTable(4)* %page_table to %PageTable(1)*
+    mov i64 [-168+bp] [-72+bp]
+;
+;call @PageTable(1).init(%PageTable(1)* %8, %Frame* %2)
+    mov i64 rg [-168+bp]
+    mov i64 rh [-56+bp]
+    call i64 %PageTable_1__init
+;
+;tail call @println(%[]u8* @global_3)
+    mov i64 rg @kernel_bc_global_3
+    call i64 %println
+;
+;%9 = bitcast %VirtAddr* %3 to i64*
+    mov i64 [-176+bp] [-88+bp]
+;
+;store i64 %const, i64* %9, align 8
+    mov i64 rc [-176+bp]
+    mov i64 [rc] [-24+bp]
+;
+;%10 = bitcast %Frame* %4 to i64*
+    mov i64 [-184+bp] [-104+bp]
+;
+;%const_mat = add i64 %const, i64 273727475
+    mov i64 [-192+bp] [-24+bp]
+    sadd i64 [-192+bp] $273727475
+;
+;store i64 %const_mat, i64* %10, align 8
+    mov i64 rc [-184+bp]
+    mov i64 [rc] [-192+bp]
+;
+;call @map_to(%PageTable(4)* %page_table, %VirtAddr* %3, %Frame* %4, %FrameAllocator* %frame_alloc)
+    mov i64 rg [-72+bp]
+    mov i64 rh [-88+bp]
+    mov i64 ri [-104+bp]
+    mov i64 rj [-40+bp]
+    call i64 %map_to
+;
+;tail call @println(%[]u8* @global_5)
+    mov i64 rg @kernel_bc_global_5
+    call i64 %println
+;
+;%11 = bitcast %VirtAddr* %5 to i64*
+    mov i64 [-200+bp] [-120+bp]
+;
+;store i64 %const, i64* %11, align 8
+    mov i64 rc [-200+bp]
+    mov i64 [rc] [-24+bp]
+;
+;call @translate(%?u64* %trans, %PageTable(4)* %page_table, %VirtAddr* %5)
+    mov i64 rg [-144+bp]
+    mov i64 rh [-72+bp]
+    mov i64 ri [-120+bp]
+    call i64 %translate
+;
+;%12 = getelementptr inbounds %?u64* %trans, i64 0, i32 1
+    mov i64 [-208+bp] [-144+bp]
+    sadd i64 [-208+bp] $8
+    mov i64 [-216+bp] [-208+bp]
+;
+;%13 = load i1* %12, align 8
+    mov i64 rc [-216+bp]
+    mov i8 [-224+bp] [rc]
+    mov i64 rb %kernel_main_Entry
+;br i1 %13, label %Else, label %Then
+    cmp i8 [-224+bp] $0
+    jne i64 %kernel_main_Else
+    jmp i64 %kernel_main_Then
+    und 
+%kernel_main_Then
+;
+;tail call @println(%[]u8* @global_7)
+    mov i64 rg @kernel_bc_global_7
+    call i64 %println
+    mov i64 rb %kernel_main_Then
+;br label %EndIf
+    jmp i64 %kernel_main_EndIf
+%kernel_main_Else
+;
+;%14 = bitcast %?u64* %trans to i64*
+    mov i64 [-232+bp] [-144+bp]
+;
+;%15 = load i64* %14, align 8
+    mov i64 rc [-232+bp]
+    mov i64 [-240+bp] [rc]
+;
+;tail call @printi(i64 %15)
+    mov i64 rg [-240+bp]
+    call i64 %kernel_bc_printi
+    mov i64 rb %kernel_main_Else
+;br label %EndIf
+    jmp i64 %kernel_main_EndIf
+%kernel_main_EndIf
 ;
 ;tail call @hlt()
     call i64 %kernel_bc_hlt
-    mov i64 rb %kernel_main_Entry
+    mov i64 rb %kernel_main_EndIf
 ;unreachable
     und 
 %kernel_main_ret
@@ -20,73 +333,324 @@
     pop i64 bp
     ret 
 
+%FrameAllocator_alloc
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $32
+    mov i64 [-8+bp] rg
+    jmp i64 %FrameAllocator_alloc_Entry
+%FrameAllocator_alloc_Entry
+;
+;%1 = bitcast %FrameAllocator* %0 to i64*
+    mov i64 [-16+bp] [-8+bp]
+;
+;%2 = load i64* %1, align 8
+    mov i64 rc [-16+bp]
+    mov i64 [-24+bp] [rc]
+;
+;%3 = add i64 %2, i64 4096
+    mov i64 [-32+bp] [-24+bp]
+    sadd i64 [-32+bp] $4096
+;
+;store i64 %3, i64* %1, align 8
+    mov i64 rc [-16+bp]
+    mov i64 [rc] [-32+bp]
+    mov i64 rb %FrameAllocator_alloc_Entry
+;ret i64 %2
+    mov i64 ra [-24+bp]
+    jmp i64 %FrameAllocator_alloc_ret
+%FrameAllocator_alloc_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%PageTable_3__next_table_create
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $184
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    mov i64 [-32+bp] rj
+    jmp i64 %PageTable_3__next_table_create_Entry
+%PageTable_3__next_table_create_Entry
+;
+;%4 = alloca %?PageTable(2), align 8
+    mov i64 [-56+bp] bp
+    sub i64 [-56+bp] $48
+;
+;%frame = alloca i64, align 8
+    mov i64 [-72+bp] bp
+    sub i64 [-72+bp] $64
+;
+;call @PageTable(3).next_table(%?PageTable(2)* %4, %PageTable(3)* %1, i64 %2)
+    mov i64 rg [-56+bp]
+    mov i64 rh [-16+bp]
+    mov i64 ri [-24+bp]
+    call i64 %PageTable_3__next_table
+;
+;%5 = getelementptr inbounds %?PageTable(2)* %4, i64 0, i32 1
+    mov i64 [-80+bp] [-56+bp]
+    sadd i64 [-80+bp] $8
+    mov i64 [-88+bp] [-80+bp]
+;
+;%6 = load i1* %5, align 8
+    mov i64 rc [-88+bp]
+    mov i8 [-96+bp] [rc]
+    mov i64 rb %PageTable_3__next_table_create_Entry
+;br i1 %6, label %OptionalNonNull, label %OptionalNull
+    cmp i8 [-96+bp] $0
+    jne i64 %PageTable_3__next_table_create_OptionalNonNull
+    jmp i64 %PageTable_3__next_table_create_OptionalNull
+    und 
+%PageTable_3__next_table_create_common_ret
+    mov i64 rb %PageTable_3__next_table_create_common_ret
+;ret void
+    jmp i64 %PageTable_3__next_table_create_ret
+%PageTable_3__next_table_create_OptionalNull
+;
+;%tmpcast = bitcast i64* %frame to %Frame*
+    mov i64 [-104+bp] [-72+bp]
+;
+;%7 = tail call @FrameAllocator.alloc(%FrameAllocator* %3)
+    mov i64 rg [-32+bp]
+    call i64 %FrameAllocator_alloc
+    mov i64 [-112+bp] ra
+;
+;%8 = or i64 %7, i64 1
+    mov i64 [-120+bp] [-112+bp]
+    or i64 [-120+bp] $1
+;
+;store i64 %8, i64* %frame, align 8
+    mov i64 rc [-72+bp]
+    mov i64 [rc] [-120+bp]
+;
+;%9 = bitcast %PageTable(3)* %1 to [512 x %Frame]**
+    mov i64 [-128+bp] [-16+bp]
+;
+;%10 = load [512 x %Frame]** %9, align 1
+    mov i64 rc [-128+bp]
+    mov i64 [-136+bp] [rc]
+;
+;%11 = getelementptr inbounds [512 x %Frame]* %10, i64 0, i64 %2, i32 0
+    mov i64 [-144+bp] [-136+bp]
+    mov i64 rc [-24+bp]
+    smul i64 rc $8
+    sadd i64 [-144+bp] rc
+    mov i64 [-152+bp] [-144+bp]
+;
+;store i64 %8, i64* %11, align 1
+    mov i64 rc [-152+bp]
+    mov i64 [rc] [-120+bp]
+;
+;%12 = bitcast %PageTable(2)* %0 to %PageTable(1)*
+    mov i64 [-160+bp] [-8+bp]
+;
+;call @PageTable(1).init(%PageTable(1)* %12, %Frame* %tmpcast)
+    mov i64 rg [-160+bp]
+    mov i64 rh [-104+bp]
+    call i64 %PageTable_1__init
+    mov i64 rb %PageTable_3__next_table_create_OptionalNull
+;br label %common.ret
+    jmp i64 %PageTable_3__next_table_create_common_ret
+%PageTable_3__next_table_create_OptionalNonNull
+;
+;%13 = bitcast %?PageTable(2)* %4 to i64*
+    mov i64 [-168+bp] [-56+bp]
+;
+;%14 = bitcast %PageTable(2)* %0 to i64*
+    mov i64 [-176+bp] [-8+bp]
+;
+;%15 = load i64* %13, align 8
+    mov i64 rc [-168+bp]
+    mov i64 [-184+bp] [rc]
+;
+;store i64 %15, i64* %14, align 1
+    mov i64 rc [-176+bp]
+    mov i64 [rc] [-184+bp]
+    mov i64 rb %PageTable_3__next_table_create_OptionalNonNull
+;br label %common.ret
+    jmp i64 %PageTable_3__next_table_create_common_ret
+%PageTable_3__next_table_create_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%PageTable_3__next_table
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $112
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    jmp i64 %PageTable_3__next_table_Entry
+%PageTable_3__next_table_Entry
+;
+;%3 = bitcast %PageTable(3)* %1 to [512 x %Frame]**
+    mov i64 [-32+bp] [-16+bp]
+;
+;%4 = load [512 x %Frame]** %3, align 1
+    mov i64 rc [-32+bp]
+    mov i64 [-40+bp] [rc]
+;
+;%5 = getelementptr inbounds [512 x %Frame]* %4, i64 0, i64 %2
+    mov i64 [-48+bp] [-40+bp]
+    mov i64 rc [-24+bp]
+    smul i64 rc $8
+    sadd i64 [-48+bp] rc
+    mov i64 [-56+bp] [-48+bp]
+;
+;%6 = bitcast %Frame* %5 to i64*
+    mov i64 [-64+bp] [-56+bp]
+;
+;%7 = load i64* %6, align 1
+    mov i64 rc [-64+bp]
+    mov i64 [-72+bp] [rc]
+;
+;%.not = icmp eq i64 %7, i64 0
+    cmp i64 [-72+bp] $0
+    jeq i64 %PageTable_3__next_table_cmp_jeq_10000006_true
+    jmp i64 %PageTable_3__next_table_cmp_jeq_10000006_false
+%PageTable_3__next_table_cmp_jeq_10000006_true
+    mov i8 [-80+bp] r1
+    jmp i64 %PageTable_3__next_table_cmp_jeq_10000006_end
+%PageTable_3__next_table_cmp_jeq_10000006_false
+    mov i8 [-80+bp] r0
+    jmp i64 %PageTable_3__next_table_cmp_jeq_10000006_end
+%PageTable_3__next_table_cmp_jeq_10000006_end
+    mov i64 rb %PageTable_3__next_table_Entry
+;br i1 %.not, label %Else, label %Then
+    cmp i8 [-80+bp] $0
+    jne i64 %PageTable_3__next_table_Else
+    jmp i64 %PageTable_3__next_table_Then
+    und 
+%PageTable_3__next_table_common_ret
+    mov i64 rb %PageTable_3__next_table_common_ret
+;ret void
+    jmp i64 %PageTable_3__next_table_ret
+%PageTable_3__next_table_Then
+;
+;%8 = getelementptr inbounds %?PageTable(2)* %0, i64 0, i32 1
+    mov i64 [-88+bp] [-8+bp]
+    sadd i64 [-88+bp] $8
+    mov i64 [-96+bp] [-88+bp]
+;
+;store i1 true, i1* %8, align 1
+    mov i64 rc [-96+bp]
+    mov i8 [rc] $1
+;
+;%9 = bitcast %?PageTable(2)* %0 to %PageTable(1)*
+    mov i64 [-104+bp] [-8+bp]
+;
+;tail call @PageTable(1).init(%PageTable(1)* %9, %Frame* %5)
+    mov i64 rg [-104+bp]
+    mov i64 rh [-56+bp]
+    call i64 %PageTable_1__init
+;
+;store i1 true, i1* %8, align 1
+    mov i64 rc [-96+bp]
+    mov i8 [rc] $1
+    mov i64 rb %PageTable_3__next_table_Then
+;br label %common.ret
+    jmp i64 %PageTable_3__next_table_common_ret
+%PageTable_3__next_table_Else
+;
+;%10 = bitcast %?PageTable(2)* %0 to i8*
+    mov i64 [-112+bp] [-8+bp]
+;
+;call @llvm.memset.p0i8.i64(i8* %10, i8 0, i64 9, i1 false)
+    mov i64 rg [-112+bp]
+    mov i8 rh $0
+    mov i64 ri $9
+    mov i8 rj $0
+    call i64 %kernel_bc_llvm_memset_p0i8_i64
+    mov i64 rb %PageTable_3__next_table_Else
+;br label %common.ret
+    jmp i64 %PageTable_3__next_table_common_ret
+%PageTable_3__next_table_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
 %println
     push i64 bp
     mov i64 bp sp
-    sub i64 sp $64
+    sub i64 sp $96
+    mov i64 [-8+bp] rg
     jmp i64 %println_Entry
 %println_Entry
+;
+;%1 = getelementptr inbounds %[]u8* %0, i64 0, i32 1
+    mov i64 [-16+bp] [-8+bp]
+    sadd i64 [-16+bp] $8
+    mov i64 [-24+bp] [-16+bp]
+;
+;%2 = load i64* %1, align 8
+    mov i64 rc [-24+bp]
+    mov i64 [-32+bp] [rc]
     mov i64 rb %println_Entry
 ;br label %ForCond
     jmp i64 %println_ForCond
 %println_ForCond
 ;
-;%lsr.iv = phi i64 [ i64 %lsr.iv.next, %ForBody ], [ i64 -18, %Entry ]
-    cmp i64 rb %println_ForBody
-    jeq i64 %println_phi_10000001_ForBody
+;%i.0 = phi i64 [ i64 0, %Entry ], [ i64 %6, %ForBody ]
     cmp i64 rb %println_Entry
-    jeq i64 %println_phi_10000002_Entry
+    jeq i64 %println_phi_10000005_Entry
+    cmp i64 rb %println_ForBody
+    jeq i64 %println_phi_10000007_ForBody
     und 
-%println_phi_10000001_ForBody
-    mov i64 [-8+bp] [-16+bp]
-    jmp i64 %println_phi_10000000_end
-%println_phi_10000002_Entry
-    mov i64 [-8+bp] $18446744073709551598
-    jmp i64 %println_phi_10000000_end
-%println_phi_10000000_end
+%println_phi_10000005_Entry
+    mov i64 [-40+bp] $0
+    jmp i64 %println_phi_10000004_end
+%println_phi_10000007_ForBody
+    mov i64 [-40+bp] [-48+bp]
+    jmp i64 %println_phi_10000004_end
+%println_phi_10000004_end
 ;
-;%exitcond.not = icmp eq i64 %lsr.iv, i64 0
-    cmp i64 [-8+bp] $0
-    jeq i64 %println_cmp_jeq_10000005_true
-    jmp i64 %println_cmp_jeq_10000005_false
-%println_cmp_jeq_10000005_true
-    mov i8 [-24+bp] r1
-    jmp i64 %println_cmp_jeq_10000005_end
-%println_cmp_jeq_10000005_false
-    mov i8 [-24+bp] r0
-    jmp i64 %println_cmp_jeq_10000005_end
-%println_cmp_jeq_10000005_end
+;%exitcond.not = icmp eq i64 %2, i64 %i.0
+    cmp i64 [-32+bp] [-40+bp]
+    jeq i64 %println_cmp_jeq_10000008_true
+    jmp i64 %println_cmp_jeq_10000008_false
+%println_cmp_jeq_10000008_true
+    mov i8 [-56+bp] r1
+    jmp i64 %println_cmp_jeq_10000008_end
+%println_cmp_jeq_10000008_false
+    mov i8 [-56+bp] r0
+    jmp i64 %println_cmp_jeq_10000008_end
+%println_cmp_jeq_10000008_end
     mov i64 rb %println_ForCond
 ;br i1 %exitcond.not, label %ForEnd, label %ForBody
-    cmp i8 [-24+bp] $0
+    cmp i8 [-56+bp] $0
     jne i64 %println_ForEnd
     jmp i64 %println_ForBody
     und 
 %println_ForBody
 ;
-;%scevgep = getelementptr [19 x i8]* @global_0, i64 0, i64 %lsr.iv
-    mov i64 [-32+bp] @kernel_bc_global_0
-    mov i64 rc [-8+bp]
+;%3 = bitcast %[]u8* %0 to i8**
+    mov i64 [-64+bp] [-8+bp]
+;
+;%4 = load i8** %3, align 8
+    mov i64 rc [-64+bp]
+    mov i64 [-72+bp] [rc]
+;
+;%scevgep = getelementptr i8* %4, i64 %i.0
+    mov i64 [-80+bp] [-72+bp]
+    mov i64 rc [-40+bp]
     smul i64 rc $1
-    sadd i64 [-32+bp] rc
-    mov i64 [-40+bp] [-32+bp]
+    sadd i64 [-80+bp] rc
+    mov i64 [-88+bp] [-80+bp]
 ;
-;%scevgep1 = getelementptr i8* %scevgep, i64 18
-    mov i64 [-48+bp] [-40+bp]
-    sadd i64 [-48+bp] $18
-    mov i64 [-56+bp] [-48+bp]
+;%5 = load i8* %scevgep, align 1
+    mov i64 rc [-88+bp]
+    mov i8 [-96+bp] [rc]
 ;
-;%0 = load i8* %scevgep1, align 1
-    mov i64 rc [-56+bp]
-    mov i8 [-64+bp] [rc]
-;
-;tail call @printc(i8 %0)
-    mov i8 rg [-64+bp]
+;tail call @printc(i8 %5)
+    mov i8 rg [-96+bp]
     call i64 %kernel_bc_printc
 ;
-;%lsr.iv.next = add i64 %lsr.iv, i64 1
-    mov i64 [-16+bp] [-8+bp]
-    sadd i64 [-16+bp] $1
+;%6 = add i64 %i.0, i64 1
+    mov i64 [-48+bp] [-40+bp]
+    sadd i64 [-48+bp] $1
     mov i64 rb %println_ForBody
 ;br label %ForCond
     jmp i64 %println_ForCond
@@ -99,6 +663,696 @@
 ;ret void
     jmp i64 %println_ret
 %println_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%PageTable_2__next_table
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $112
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    jmp i64 %PageTable_2__next_table_Entry
+%PageTable_2__next_table_Entry
+;
+;%3 = bitcast %PageTable(2)* %1 to [512 x %Frame]**
+    mov i64 [-32+bp] [-16+bp]
+;
+;%4 = load [512 x %Frame]** %3, align 1
+    mov i64 rc [-32+bp]
+    mov i64 [-40+bp] [rc]
+;
+;%5 = getelementptr inbounds [512 x %Frame]* %4, i64 0, i64 %2
+    mov i64 [-48+bp] [-40+bp]
+    mov i64 rc [-24+bp]
+    smul i64 rc $8
+    sadd i64 [-48+bp] rc
+    mov i64 [-56+bp] [-48+bp]
+;
+;%6 = bitcast %Frame* %5 to i64*
+    mov i64 [-64+bp] [-56+bp]
+;
+;%7 = load i64* %6, align 1
+    mov i64 rc [-64+bp]
+    mov i64 [-72+bp] [rc]
+;
+;%.not = icmp eq i64 %7, i64 0
+    cmp i64 [-72+bp] $0
+    jeq i64 %PageTable_2__next_table_cmp_jeq_10000006_true
+    jmp i64 %PageTable_2__next_table_cmp_jeq_10000006_false
+%PageTable_2__next_table_cmp_jeq_10000006_true
+    mov i8 [-80+bp] r1
+    jmp i64 %PageTable_2__next_table_cmp_jeq_10000006_end
+%PageTable_2__next_table_cmp_jeq_10000006_false
+    mov i8 [-80+bp] r0
+    jmp i64 %PageTable_2__next_table_cmp_jeq_10000006_end
+%PageTable_2__next_table_cmp_jeq_10000006_end
+    mov i64 rb %PageTable_2__next_table_Entry
+;br i1 %.not, label %Else, label %Then
+    cmp i8 [-80+bp] $0
+    jne i64 %PageTable_2__next_table_Else
+    jmp i64 %PageTable_2__next_table_Then
+    und 
+%PageTable_2__next_table_common_ret
+    mov i64 rb %PageTable_2__next_table_common_ret
+;ret void
+    jmp i64 %PageTable_2__next_table_ret
+%PageTable_2__next_table_Then
+;
+;%8 = getelementptr inbounds %?PageTable(1)* %0, i64 0, i32 1
+    mov i64 [-88+bp] [-8+bp]
+    sadd i64 [-88+bp] $8
+    mov i64 [-96+bp] [-88+bp]
+;
+;store i1 true, i1* %8, align 1
+    mov i64 rc [-96+bp]
+    mov i8 [rc] $1
+;
+;%9 = bitcast %?PageTable(1)* %0 to %PageTable(1)*
+    mov i64 [-104+bp] [-8+bp]
+;
+;tail call @PageTable(1).init(%PageTable(1)* %9, %Frame* %5)
+    mov i64 rg [-104+bp]
+    mov i64 rh [-56+bp]
+    call i64 %PageTable_1__init
+;
+;store i1 true, i1* %8, align 1
+    mov i64 rc [-96+bp]
+    mov i8 [rc] $1
+    mov i64 rb %PageTable_2__next_table_Then
+;br label %common.ret
+    jmp i64 %PageTable_2__next_table_common_ret
+%PageTable_2__next_table_Else
+;
+;%10 = bitcast %?PageTable(1)* %0 to i8*
+    mov i64 [-112+bp] [-8+bp]
+;
+;call @llvm.memset.p0i8.i64(i8* %10, i8 0, i64 9, i1 false)
+    mov i64 rg [-112+bp]
+    mov i8 rh $0
+    mov i64 ri $9
+    mov i8 rj $0
+    call i64 %kernel_bc_llvm_memset_p0i8_i64
+    mov i64 rb %PageTable_2__next_table_Else
+;br label %common.ret
+    jmp i64 %PageTable_2__next_table_common_ret
+%PageTable_2__next_table_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%PageTable_4__next_table_create
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $200
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    mov i64 [-32+bp] rj
+    jmp i64 %PageTable_4__next_table_create_Entry
+%PageTable_4__next_table_create_Entry
+;
+;%4 = alloca %?PageTable(3), align 8
+    mov i64 [-56+bp] bp
+    sub i64 [-56+bp] $48
+;
+;%frame = alloca i64, align 8
+    mov i64 [-72+bp] bp
+    sub i64 [-72+bp] $64
+;
+;%5 = bitcast %?PageTable(3)* %4 to %?PageTable(2)*
+    mov i64 [-80+bp] [-56+bp]
+;
+;%6 = bitcast %PageTable(4)* %1 to %PageTable(3)*
+    mov i64 [-88+bp] [-16+bp]
+;
+;call @PageTable(3).next_table(%?PageTable(2)* %5, %PageTable(3)* %6, i64 %2)
+    mov i64 rg [-80+bp]
+    mov i64 rh [-88+bp]
+    mov i64 ri [-24+bp]
+    call i64 %PageTable_3__next_table
+;
+;%7 = getelementptr inbounds %?PageTable(3)* %4, i64 0, i32 1
+    mov i64 [-96+bp] [-56+bp]
+    sadd i64 [-96+bp] $8
+    mov i64 [-104+bp] [-96+bp]
+;
+;%8 = load i1* %7, align 8
+    mov i64 rc [-104+bp]
+    mov i8 [-112+bp] [rc]
+    mov i64 rb %PageTable_4__next_table_create_Entry
+;br i1 %8, label %OptionalNonNull, label %OptionalNull
+    cmp i8 [-112+bp] $0
+    jne i64 %PageTable_4__next_table_create_OptionalNonNull
+    jmp i64 %PageTable_4__next_table_create_OptionalNull
+    und 
+%PageTable_4__next_table_create_common_ret
+    mov i64 rb %PageTable_4__next_table_create_common_ret
+;ret void
+    jmp i64 %PageTable_4__next_table_create_ret
+%PageTable_4__next_table_create_OptionalNull
+;
+;%tmpcast = bitcast i64* %frame to %Frame*
+    mov i64 [-120+bp] [-72+bp]
+;
+;%9 = tail call @FrameAllocator.alloc(%FrameAllocator* %3)
+    mov i64 rg [-32+bp]
+    call i64 %FrameAllocator_alloc
+    mov i64 [-128+bp] ra
+;
+;%10 = or i64 %9, i64 1
+    mov i64 [-136+bp] [-128+bp]
+    or i64 [-136+bp] $1
+;
+;store i64 %10, i64* %frame, align 8
+    mov i64 rc [-72+bp]
+    mov i64 [rc] [-136+bp]
+;
+;%11 = bitcast %PageTable(4)* %1 to [512 x %Frame]**
+    mov i64 [-144+bp] [-16+bp]
+;
+;%12 = load [512 x %Frame]** %11, align 1
+    mov i64 rc [-144+bp]
+    mov i64 [-152+bp] [rc]
+;
+;%13 = getelementptr inbounds [512 x %Frame]* %12, i64 0, i64 %2, i32 0
+    mov i64 [-160+bp] [-152+bp]
+    mov i64 rc [-24+bp]
+    smul i64 rc $8
+    sadd i64 [-160+bp] rc
+    mov i64 [-168+bp] [-160+bp]
+;
+;store i64 %10, i64* %13, align 1
+    mov i64 rc [-168+bp]
+    mov i64 [rc] [-136+bp]
+;
+;%14 = bitcast %PageTable(3)* %0 to %PageTable(1)*
+    mov i64 [-176+bp] [-8+bp]
+;
+;call @PageTable(1).init(%PageTable(1)* %14, %Frame* %tmpcast)
+    mov i64 rg [-176+bp]
+    mov i64 rh [-120+bp]
+    call i64 %PageTable_1__init
+    mov i64 rb %PageTable_4__next_table_create_OptionalNull
+;br label %common.ret
+    jmp i64 %PageTable_4__next_table_create_common_ret
+%PageTable_4__next_table_create_OptionalNonNull
+;
+;%15 = bitcast %?PageTable(3)* %4 to i64*
+    mov i64 [-184+bp] [-56+bp]
+;
+;%16 = bitcast %PageTable(3)* %0 to i64*
+    mov i64 [-192+bp] [-8+bp]
+;
+;%17 = load i64* %15, align 8
+    mov i64 rc [-184+bp]
+    mov i64 [-200+bp] [rc]
+;
+;store i64 %17, i64* %16, align 1
+    mov i64 rc [-192+bp]
+    mov i64 [rc] [-200+bp]
+    mov i64 rb %PageTable_4__next_table_create_OptionalNonNull
+;br label %common.ret
+    jmp i64 %PageTable_4__next_table_create_common_ret
+%PageTable_4__next_table_create_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%PageTable_2__next_table_create
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $176
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    mov i64 [-32+bp] rj
+    jmp i64 %PageTable_2__next_table_create_Entry
+%PageTable_2__next_table_create_Entry
+;
+;%4 = alloca %?PageTable(1), align 8
+    mov i64 [-56+bp] bp
+    sub i64 [-56+bp] $48
+;
+;%frame = alloca i64, align 8
+    mov i64 [-72+bp] bp
+    sub i64 [-72+bp] $64
+;
+;call @PageTable(2).next_table(%?PageTable(1)* %4, %PageTable(2)* %1, i64 %2)
+    mov i64 rg [-56+bp]
+    mov i64 rh [-16+bp]
+    mov i64 ri [-24+bp]
+    call i64 %PageTable_2__next_table
+;
+;%5 = getelementptr inbounds %?PageTable(1)* %4, i64 0, i32 1
+    mov i64 [-80+bp] [-56+bp]
+    sadd i64 [-80+bp] $8
+    mov i64 [-88+bp] [-80+bp]
+;
+;%6 = load i1* %5, align 8
+    mov i64 rc [-88+bp]
+    mov i8 [-96+bp] [rc]
+    mov i64 rb %PageTable_2__next_table_create_Entry
+;br i1 %6, label %OptionalNonNull, label %OptionalNull
+    cmp i8 [-96+bp] $0
+    jne i64 %PageTable_2__next_table_create_OptionalNonNull
+    jmp i64 %PageTable_2__next_table_create_OptionalNull
+    und 
+%PageTable_2__next_table_create_common_ret
+    mov i64 rb %PageTable_2__next_table_create_common_ret
+;ret void
+    jmp i64 %PageTable_2__next_table_create_ret
+%PageTable_2__next_table_create_OptionalNull
+;
+;%tmpcast = bitcast i64* %frame to %Frame*
+    mov i64 [-104+bp] [-72+bp]
+;
+;%7 = tail call @FrameAllocator.alloc(%FrameAllocator* %3)
+    mov i64 rg [-32+bp]
+    call i64 %FrameAllocator_alloc
+    mov i64 [-112+bp] ra
+;
+;%8 = or i64 %7, i64 1
+    mov i64 [-120+bp] [-112+bp]
+    or i64 [-120+bp] $1
+;
+;store i64 %8, i64* %frame, align 8
+    mov i64 rc [-72+bp]
+    mov i64 [rc] [-120+bp]
+;
+;%9 = bitcast %PageTable(2)* %1 to [512 x %Frame]**
+    mov i64 [-128+bp] [-16+bp]
+;
+;%10 = load [512 x %Frame]** %9, align 1
+    mov i64 rc [-128+bp]
+    mov i64 [-136+bp] [rc]
+;
+;%11 = getelementptr inbounds [512 x %Frame]* %10, i64 0, i64 %2, i32 0
+    mov i64 [-144+bp] [-136+bp]
+    mov i64 rc [-24+bp]
+    smul i64 rc $8
+    sadd i64 [-144+bp] rc
+    mov i64 [-152+bp] [-144+bp]
+;
+;store i64 %8, i64* %11, align 1
+    mov i64 rc [-152+bp]
+    mov i64 [rc] [-120+bp]
+;
+;call @PageTable(1).init(%PageTable(1)* %0, %Frame* %tmpcast)
+    mov i64 rg [-8+bp]
+    mov i64 rh [-104+bp]
+    call i64 %PageTable_1__init
+    mov i64 rb %PageTable_2__next_table_create_OptionalNull
+;br label %common.ret
+    jmp i64 %PageTable_2__next_table_create_common_ret
+%PageTable_2__next_table_create_OptionalNonNull
+;
+;%12 = bitcast %?PageTable(1)* %4 to i64*
+    mov i64 [-160+bp] [-56+bp]
+;
+;%13 = bitcast %PageTable(1)* %0 to i64*
+    mov i64 [-168+bp] [-8+bp]
+;
+;%14 = load i64* %12, align 8
+    mov i64 rc [-160+bp]
+    mov i64 [-176+bp] [rc]
+;
+;store i64 %14, i64* %13, align 1
+    mov i64 rc [-168+bp]
+    mov i64 [rc] [-176+bp]
+    mov i64 rb %PageTable_2__next_table_create_OptionalNonNull
+;br label %common.ret
+    jmp i64 %PageTable_2__next_table_create_common_ret
+%PageTable_2__next_table_create_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%translate
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $528
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    mov i64 [-24+bp] ri
+    jmp i64 %translate_Entry
+%translate_Entry
+;
+;%3 = alloca %?PageTable(3), align 8
+    mov i64 [-48+bp] bp
+    sub i64 [-48+bp] $40
+;
+;%pt3 = alloca i64, align 8
+    mov i64 [-64+bp] bp
+    sub i64 [-64+bp] $56
+;
+;%4 = alloca %?PageTable(2), align 8
+    mov i64 [-88+bp] bp
+    sub i64 [-88+bp] $80
+;
+;%pt2 = alloca i64, align 8
+    mov i64 [-104+bp] bp
+    sub i64 [-104+bp] $96
+;
+;%5 = alloca %?PageTable(1), align 8
+    mov i64 [-128+bp] bp
+    sub i64 [-128+bp] $120
+;
+;%6 = bitcast %VirtAddr* %2 to i64*
+    mov i64 [-136+bp] [-24+bp]
+;
+;%7 = load i64* %6, align 8
+    mov i64 rc [-136+bp]
+    mov i64 [-144+bp] [rc]
+;
+;%8 = lshr i64 %7, i64 39
+    mov i64 [-152+bp] [-144+bp]
+    shr i64 [-152+bp] $39
+;
+;%9 = and i64 %8, i64 511
+    mov i64 [-160+bp] [-152+bp]
+    and i64 [-160+bp] $511
+;
+;%10 = bitcast %?PageTable(3)* %3 to %?PageTable(2)*
+    mov i64 [-168+bp] [-48+bp]
+;
+;%11 = bitcast %PageTable(4)* %1 to %PageTable(3)*
+    mov i64 [-176+bp] [-16+bp]
+;
+;call @PageTable(3).next_table(%?PageTable(2)* %10, %PageTable(3)* %11, i64 %9)
+    mov i64 rg [-168+bp]
+    mov i64 rh [-176+bp]
+    mov i64 ri [-160+bp]
+    call i64 %PageTable_3__next_table
+;
+;%12 = getelementptr inbounds %?PageTable(3)* %3, i64 0, i32 1
+    mov i64 [-184+bp] [-48+bp]
+    sadd i64 [-184+bp] $8
+    mov i64 [-192+bp] [-184+bp]
+;
+;%13 = load i1* %12, align 8
+    mov i64 rc [-192+bp]
+    mov i8 [-200+bp] [rc]
+    mov i64 rb %translate_Entry
+;br i1 %13, label %OptionalNonNull, label %OptionalNull
+    cmp i8 [-200+bp] $0
+    jne i64 %translate_OptionalNonNull
+    jmp i64 %translate_OptionalNull
+    und 
+%translate_common_ret
+    mov i64 rb %translate_common_ret
+;ret void
+    jmp i64 %translate_ret
+%translate_OptionalNull
+;
+;%14 = bitcast %?u64* %0 to i8*
+    mov i64 [-208+bp] [-8+bp]
+;
+;call @llvm.memset.p0i8.i64(i8* %14, i8 0, i64 16, i1 false)
+    mov i64 rg [-208+bp]
+    mov i8 rh $0
+    mov i64 ri $16
+    mov i8 rj $0
+    call i64 %kernel_bc_llvm_memset_p0i8_i64
+    mov i64 rb %translate_OptionalNull
+;br label %common.ret
+    jmp i64 %translate_common_ret
+%translate_OptionalNonNull
+;
+;%15 = bitcast %VirtAddr* %2 to i64*
+    mov i64 [-216+bp] [-24+bp]
+;
+;%tmpcast = bitcast i64* %pt3 to %PageTable(3)*
+    mov i64 [-224+bp] [-64+bp]
+;
+;%16 = bitcast %?PageTable(3)* %3 to i64*
+    mov i64 [-232+bp] [-48+bp]
+;
+;%17 = load i64* %16, align 8
+    mov i64 rc [-232+bp]
+    mov i64 [-240+bp] [rc]
+;
+;store i64 %17, i64* %pt3, align 8
+    mov i64 rc [-64+bp]
+    mov i64 [rc] [-240+bp]
+;
+;%18 = load i64* %15, align 8
+    mov i64 rc [-216+bp]
+    mov i64 [-248+bp] [rc]
+;
+;%19 = lshr i64 %18, i64 30
+    mov i64 [-256+bp] [-248+bp]
+    shr i64 [-256+bp] $30
+;
+;%20 = and i64 %19, i64 511
+    mov i64 [-264+bp] [-256+bp]
+    and i64 [-264+bp] $511
+;
+;call @PageTable(3).next_table(%?PageTable(2)* %4, %PageTable(3)* %tmpcast, i64 %20)
+    mov i64 rg [-88+bp]
+    mov i64 rh [-224+bp]
+    mov i64 ri [-264+bp]
+    call i64 %PageTable_3__next_table
+;
+;%21 = getelementptr inbounds %?PageTable(2)* %4, i64 0, i32 1
+    mov i64 [-272+bp] [-88+bp]
+    sadd i64 [-272+bp] $8
+    mov i64 [-280+bp] [-272+bp]
+;
+;%22 = load i1* %21, align 8
+    mov i64 rc [-280+bp]
+    mov i8 [-288+bp] [rc]
+    mov i64 rb %translate_OptionalNonNull
+;br i1 %22, label %OptionalNonNull2, label %OptionalNull1
+    cmp i8 [-288+bp] $0
+    jne i64 %translate_OptionalNonNull2
+    jmp i64 %translate_OptionalNull1
+    und 
+%translate_OptionalNull1
+;
+;%23 = bitcast %?u64* %0 to i8*
+    mov i64 [-296+bp] [-8+bp]
+;
+;call @llvm.memset.p0i8.i64(i8* %23, i8 0, i64 16, i1 false)
+    mov i64 rg [-296+bp]
+    mov i8 rh $0
+    mov i64 ri $16
+    mov i8 rj $0
+    call i64 %kernel_bc_llvm_memset_p0i8_i64
+    mov i64 rb %translate_OptionalNull1
+;br label %common.ret
+    jmp i64 %translate_common_ret
+%translate_OptionalNonNull2
+;
+;%24 = bitcast %VirtAddr* %2 to i64*
+    mov i64 [-304+bp] [-24+bp]
+;
+;%25 = bitcast i64* %pt2 to %PageTable(2)*
+    mov i64 [-312+bp] [-104+bp]
+;
+;%26 = bitcast %?PageTable(2)* %4 to i64*
+    mov i64 [-320+bp] [-88+bp]
+;
+;%27 = load i64* %26, align 8
+    mov i64 rc [-320+bp]
+    mov i64 [-328+bp] [rc]
+;
+;store i64 %27, i64* %pt2, align 8
+    mov i64 rc [-104+bp]
+    mov i64 [rc] [-328+bp]
+;
+;%28 = load i64* %24, align 8
+    mov i64 rc [-304+bp]
+    mov i64 [-336+bp] [rc]
+;
+;%29 = lshr i64 %28, i64 21
+    mov i64 [-344+bp] [-336+bp]
+    shr i64 [-344+bp] $21
+;
+;%30 = and i64 %29, i64 511
+    mov i64 [-352+bp] [-344+bp]
+    and i64 [-352+bp] $511
+;
+;call @PageTable(2).next_table(%?PageTable(1)* %5, %PageTable(2)* %25, i64 %30)
+    mov i64 rg [-128+bp]
+    mov i64 rh [-312+bp]
+    mov i64 ri [-352+bp]
+    call i64 %PageTable_2__next_table
+;
+;%31 = getelementptr inbounds %?PageTable(1)* %5, i64 0, i32 1
+    mov i64 [-360+bp] [-128+bp]
+    sadd i64 [-360+bp] $8
+    mov i64 [-368+bp] [-360+bp]
+;
+;%32 = load i1* %31, align 8
+    mov i64 rc [-368+bp]
+    mov i8 [-376+bp] [rc]
+    mov i64 rb %translate_OptionalNonNull2
+;br i1 %32, label %OptionalNonNull5, label %OptionalNull4
+    cmp i8 [-376+bp] $0
+    jne i64 %translate_OptionalNonNull5
+    jmp i64 %translate_OptionalNull4
+    und 
+%translate_OptionalNull4
+;
+;%33 = bitcast %?u64* %0 to i8*
+    mov i64 [-384+bp] [-8+bp]
+;
+;call @llvm.memset.p0i8.i64(i8* %33, i8 0, i64 16, i1 false)
+    mov i64 rg [-384+bp]
+    mov i8 rh $0
+    mov i64 ri $16
+    mov i8 rj $0
+    call i64 %kernel_bc_llvm_memset_p0i8_i64
+    mov i64 rb %translate_OptionalNull4
+;br label %common.ret
+    jmp i64 %translate_common_ret
+%translate_OptionalNonNull5
+;
+;%34 = bitcast %VirtAddr* %2 to i64*
+    mov i64 [-392+bp] [-24+bp]
+;
+;%pt1.sroa.0.0..sroa_idx10 = bitcast %?PageTable(1)* %5 to [512 x %Frame]**
+    mov i64 [-400+bp] [-128+bp]
+;
+;%pt1.sroa.0.0.copyload = load [512 x %Frame]** %pt1.sroa.0.0..sroa_idx10, align 8
+    mov i64 rc [-400+bp]
+    mov i64 [-408+bp] [rc]
+;
+;%35 = load i64* %34, align 8
+    mov i64 rc [-392+bp]
+    mov i64 [-416+bp] [rc]
+;
+;%36 = lshr i64 %35, i64 12
+    mov i64 [-424+bp] [-416+bp]
+    shr i64 [-424+bp] $12
+;
+;%37 = and i64 %36, i64 511
+    mov i64 [-432+bp] [-424+bp]
+    and i64 [-432+bp] $511
+;
+;%38 = getelementptr inbounds [512 x %Frame]* %pt1.sroa.0.0.copyload, i64 0, i64 %37, i32 0
+    mov i64 [-440+bp] [-408+bp]
+    mov i64 rc [-432+bp]
+    smul i64 rc $8
+    sadd i64 [-440+bp] rc
+    mov i64 [-448+bp] [-440+bp]
+;
+;%39 = load i64* %38, align 1
+    mov i64 rc [-448+bp]
+    mov i64 [-456+bp] [rc]
+;
+;%40 = and i64 %39, i64 1
+    mov i64 [-464+bp] [-456+bp]
+    and i64 [-464+bp] $1
+;
+;%41 = icmp eq i64 %40, i64 0
+    cmp i64 [-464+bp] $0
+    jeq i64 %translate_cmp_jeq_10000045_true
+    jmp i64 %translate_cmp_jeq_10000045_false
+%translate_cmp_jeq_10000045_true
+    mov i8 [-472+bp] r1
+    jmp i64 %translate_cmp_jeq_10000045_end
+%translate_cmp_jeq_10000045_false
+    mov i8 [-472+bp] r0
+    jmp i64 %translate_cmp_jeq_10000045_end
+%translate_cmp_jeq_10000045_end
+    mov i64 rb %translate_OptionalNonNull5
+;br i1 %41, label %Then, label %EndIf
+    cmp i8 [-472+bp] $0
+    jne i64 %translate_Then
+    jmp i64 %translate_EndIf
+    und 
+%translate_Then
+;
+;%42 = bitcast %?u64* %0 to i8*
+    mov i64 [-480+bp] [-8+bp]
+;
+;call @llvm.memset.p0i8.i64(i8* %42, i8 0, i64 16, i1 false)
+    mov i64 rg [-480+bp]
+    mov i8 rh $0
+    mov i64 ri $16
+    mov i8 rj $0
+    call i64 %kernel_bc_llvm_memset_p0i8_i64
+    mov i64 rb %translate_Then
+;br label %common.ret
+    jmp i64 %translate_common_ret
+%translate_EndIf
+;
+;%43 = and i64 %39, i64 4503599627366400
+    mov i64 [-488+bp] [-456+bp]
+    and i64 [-488+bp] $4503599627366400
+;
+;%44 = and i64 %35, i64 4095
+    mov i64 [-496+bp] [-416+bp]
+    and i64 [-496+bp] $4095
+;
+;%45 = or i64 %43, i64 %44
+    mov i64 [-504+bp] [-488+bp]
+    or i64 [-504+bp] [-496+bp]
+;
+;%46 = getelementptr inbounds %?u64* %0, i64 0, i32 1
+    mov i64 [-512+bp] [-8+bp]
+    sadd i64 [-512+bp] $8
+    mov i64 [-520+bp] [-512+bp]
+;
+;store i1 true, i1* %46, align 8
+    mov i64 rc [-520+bp]
+    mov i8 [rc] $1
+;
+;%47 = bitcast %?u64* %0 to i64*
+    mov i64 [-528+bp] [-8+bp]
+;
+;store i64 %45, i64* %47, align 8
+    mov i64 rc [-528+bp]
+    mov i64 [rc] [-504+bp]
+    mov i64 rb %translate_EndIf
+;br label %common.ret
+    jmp i64 %translate_common_ret
+%translate_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%PageTable_1__init
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $64
+    mov i64 [-8+bp] rg
+    mov i64 [-16+bp] rh
+    jmp i64 %PageTable_1__init_Entry
+%PageTable_1__init_Entry
+;
+;%2 = bitcast %PageTable(1)* %0 to [512 x %Frame]**
+    mov i64 [-24+bp] [-8+bp]
+;
+;%3 = bitcast %Frame* %1 to i64*
+    mov i64 [-32+bp] [-16+bp]
+;
+;%4 = load i64* %3, align 1
+    mov i64 rc [-32+bp]
+    mov i64 [-40+bp] [rc]
+;
+;%5 = and i64 %4, i64 4503599627366400
+    mov i64 [-48+bp] [-40+bp]
+    and i64 [-48+bp] $4503599627366400
+;
+;%6 = add i64 %5, i64 18446603336221196288
+    mov i64 [-56+bp] [-48+bp]
+    sadd i64 [-56+bp] $18446603336221196288
+;
+;%7 = inttoptr i64 %6 to [512 x %Frame]*
+    mov i64 [-64+bp] [-56+bp]
+;
+;store [512 x %Frame]* %7, [512 x %Frame]** %2, align 1
+    mov i64 rc [-24+bp]
+    mov i64 [rc] [-64+bp]
+    mov i64 rb %PageTable_1__init_Entry
+;ret void
+    jmp i64 %PageTable_1__init_ret
+%PageTable_1__init_ret
     mov i64 sp bp
     pop i64 bp
     ret 
