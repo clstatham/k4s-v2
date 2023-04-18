@@ -37,7 +37,7 @@ pub fn test_llvm() -> Result<()> {
     let paths = glob::glob("src/tests/rust/target/k4s-unknown-none/release/deps/*.bc")?;
     for path in paths {
         let path = path?;
-        let mut ctx = LlvmContext::load(path.clone());
+        let mut ctx = LlvmContext::load(&path);
         log::info!("Lowering {}.", path.as_path().to_string_lossy());
         let asm = ctx.lower()?;
         // println!("{}", asm);

@@ -596,6 +596,17 @@ impl MachineContext {
                 self.assign_lvalue_with(arg0?, instr, |arg0| Ok(arg0.sext(instr.size).unwrap()))?
             }
             Opcode::Sshr => self.assign_lvalue_with(arg0?, instr, |arg0| arg0.sshr(&arg1?))?,
+
+            Opcode::Sadd => {
+                self.assign_lvalue_with(arg0?, instr, |arg0| arg0.sadd(&arg1?))?;
+            }
+
+            Opcode::Ssub => {
+                self.assign_lvalue_with(arg0?, instr, |arg0| arg0.ssub(&arg1?))?;
+            }
+            Opcode::Smul => {
+                self.assign_lvalue_with(arg0?, instr, |arg0| arg0.smul(&arg1?))?;
+            }
             Opcode::Sdiv => {
                 self.assign_lvalue_with(arg0?, instr, |arg0| arg0.sdiv(&arg1?))?;
             }
@@ -605,12 +616,12 @@ impl MachineContext {
             Opcode::Printi => {
                 let val = self.read0(arg0?, instr)?;
                 println!(
-                    "{}",
+                    "{:x}",
                     val.as_integer::<u128>().unwrap()
                 );
                 writeln!(
                     &mut self.output_history,
-                    "{}",
+                    "{:x}",
                     val.as_integer::<u128>().unwrap()
                 )?;
             }
@@ -640,6 +651,7 @@ impl MachineContext {
             }
             Opcode::Enpt => {
                 self.regs.pc = self.read0(arg0?, instr)?.as_integer().unwrap();
+
                 self.regs.fl.set(Fl::PT_ENABLED, true);
                 self.call_depth -= 1;
                 return Ok(MachineState::ContDontUpdatePc);

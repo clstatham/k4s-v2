@@ -9,20 +9,20 @@ extern fn boot_hlt() noreturn;
 extern fn boot_und() noreturn;
 extern fn boot_write_pt(pt: u64) noreturn;
 
-fn println(s: []const u8) void {
+fn boot_println(s: []const u8) void {
     for (s) |c| {
         boot_printc(c);
     }
     boot_printc('\n');
 }
 
-const FRAME_ALLOC_START: u64 = 0x1000;
-const PHYS_OFFSET: u64 = 0x80000000;
+const PAGE_SIZE: u64 = 4096;
+const PHYS_OFFSET: u64 = 0xffff800000000000;
 const KERNEL_OFFSET_PHYS: u64 = 0x200000;
 const KERNEL_OFFSET_VIRT: u64 = KERNEL_OFFSET_PHYS | PHYS_OFFSET;
 const KERNEL_END_PHYS: u64 = 0x500000;
+const FRAME_ALLOC_START: u64 = KERNEL_END_PHYS + PAGE_SIZE;
 const KERNEL_END_VIRT: u64 = KERNEL_END_PHYS | PHYS_OFFSET;
-const PAGE_SIZE: u64 = 4096;
 const ENTRIES_PER_TABLE: usize = 512; // each entry is a u64 (8 bytes)
 
 const Frame = packed struct {
@@ -89,7 +89,7 @@ pub fn PageTable(comptime Level: u8) type {
             }
         }
 
-        pub noinline fn next_table_create(self: *Self, index: usize, flags: u64, frame_alloc: *FrameAllocator) PageTable(Level - 1) {
+        pub noinline fn next_table_create(self: *Self, index: usize, flags: u64) PageTable(Level - 1) {
             return self.next_table(index) orelse {
                 const allocated = frame_alloc.alloc();
                 const frame = Frame.init(allocated | flags | 0b1);
@@ -111,10 +111,10 @@ pub noinline fn translate(pt4: *PageTable(4), virt: VirtAddr) ?u64 {
     return frame.addr_value() + virt.page_offset();
 }
 
-pub noinline fn map_to(pt4: *PageTable(4), virt: VirtAddr, frame: Frame, flags: u64, frame_alloc: *FrameAllocator) void {
-    var pt3 = pt4.next_table_create(virt.pt4_idx(), flags, frame_alloc);
-    var pt2 = pt3.next_table_create(virt.pt3_idx(), flags, frame_alloc);
-    var pt1 = pt2.next_table_create(virt.pt2_idx(), flags, frame_alloc);
+pub noinline fn map_to(pt4: *PageTable(4), virt: VirtAddr, frame: Frame, flags: u64) void {
+    var pt3 = pt4.next_table_create(virt.pt4_idx(), flags);
+    var pt2 = pt3.next_table_create(virt.pt3_idx(), flags);
+    var pt1 = pt2.next_table_create(virt.pt2_idx(), flags);
     pt1.table[virt.pt1_idx()] = frame;
     pt1.table[virt.pt1_idx()].value |= flags | 0b1;
 }
@@ -134,11 +134,27 @@ const FrameAllocator = struct {
     }
 };
 
-noinline fn setup_paging(pt4_frame: Frame, frame_alloc: *FrameAllocator) PageTable(4) {
+var frame_alloc: FrameAllocator = FrameAllocator.init();
+
+noinline fn setup_paging(pt4_frame: Frame) PageTable(4) {
     var pt = PageTable(4).init(pt4_frame);
-    var frame: u64 = 0x1000;
+    var ident_frame: u64 = 0x100000;
+    while (ident_frame < KERNEL_OFFSET_PHYS) {
+        // boot_printi(ident_frame);
+        map_to(&pt, VirtAddr.init(ident_frame), Frame.init(ident_frame), 0b1);
+        map_to(&pt, VirtAddr.init(ident_frame | PHYS_OFFSET), Frame.init(ident_frame), 0b1);
+        ident_frame += PAGE_SIZE;
+    }
+    // ident_frame = FRAME_ALLOC_START;
+    // while (ident_frame < FRAME_ALLOC_START + 0x100000) {
+    //     // boot_printi(ident_frame);
+    //     map_to(&pt, VirtAddr.init(ident_frame), Frame.init(ident_frame), 0b1);
+    //     ident_frame += PAGE_SIZE;
+    // }
+    var frame: u64 = KERNEL_OFFSET_PHYS;
     while (frame < KERNEL_END_PHYS) {
-        map_to(&pt, VirtAddr.init(frame | PHYS_OFFSET), Frame.init(frame), 0b1, frame_alloc);
+        // boot_printi(frame);
+        map_to(&pt, VirtAddr.init(frame | PHYS_OFFSET), Frame.init(frame), 0b1);
         frame += PAGE_SIZE;
     }
 
@@ -146,27 +162,16 @@ noinline fn setup_paging(pt4_frame: Frame, frame_alloc: *FrameAllocator) PageTab
 }
 
 pub export fn bootloader_main(mem_size: u64) noreturn {
-    println("Physical memory size is:");
+    boot_println("Physical memory size is:");
     boot_printi(mem_size);
-    println("Creating page table at:");
-    var frame_alloc = FrameAllocator.init();
+    frame_alloc = FrameAllocator.init();
     const pt4_frame = Frame.init(frame_alloc.alloc());
+    boot_println("Creating page table at:");
     boot_printi(pt4_frame.addr_value());
-
-    var page_table = setup_paging(pt4_frame, &frame_alloc);
+    var page_table = setup_paging(pt4_frame);
     _ = page_table;
-    println("Enabling paging.");
-    boot_write_pt(@truncate(u64, pt4_frame.addr_value()));
-    // println("Paging is enabled!");
-    // map_to(&page_table, VirtAddr.init(0xbaadf00d), Frame.init(0xcafeb000), 0b1, &frame_alloc);
-    // println("0xbaadf00d =>");
-    // const trans = translate(&page_table, VirtAddr.init(0xbaadf00d));
-    // if (trans == null) {
-    //     println("Error translating 0xbaadf00d");
-    // } else {
-    //     printi(@intCast(u64, trans.?));
-    // }
-    // hlt();
+    boot_println("Enabling paging.");
+    boot_write_pt(pt4_frame.addr_value());
 }
 
 pub fn panic(msg: []const u8, stack_trace: ?*builtin.StackTrace) noreturn {
@@ -174,6 +179,6 @@ pub fn panic(msg: []const u8, stack_trace: ?*builtin.StackTrace) noreturn {
     _ = stack_trace;
     // var buf: [1024 * 10]u8 = undefined;
     // const formatted = fmt.bufPrint(buf[0..], "Panic! {s}", .{msg}) catch "Panic!!!";
-    println("Panic!!!");
+    boot_println("Panic!!!");
     boot_und();
 }

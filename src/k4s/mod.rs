@@ -226,7 +226,7 @@ impl<T: Primitive + BitXor<T, Output = T>> BitXor<Prim<T>> for Prim<T> {
 #[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Default)]
 pub struct Label {
     name: String,
-    pub region_id: Option<usize>,
+    pub region_tag: Option<String>,
 }
 
 impl Display for Label {
@@ -239,14 +239,14 @@ impl Label {
     pub fn new(label: String) -> Self {
         Self {
             name: label,
-            region_id: None,
+            region_tag: None,
         }
     }
 
-    pub fn new_in_region(label: String, region_id: usize) -> Self {
+    pub fn new_in_region(label: String, region_tag: String) -> Self {
         Self {
             name: label,
-            region_id: Some(region_id),
+            region_tag: Some(region_tag),
         }
     }
 
@@ -412,8 +412,11 @@ impl Token {
     token_int_arith_impl!(shl, shl);
     token_int_arith_impl!(shr, shr);
     token_signed_int_arith_impl!(sshr, shr);
-    token_signed_int_arith_impl!(smod, rem);
+    token_signed_int_arith_impl!(sadd, add);
+    token_signed_int_arith_impl!(ssub, sub);
+    token_signed_int_arith_impl!(smul, mul);
     token_signed_int_arith_impl!(sdiv, div);
+    token_signed_int_arith_impl!(smod, rem);
 
     pub fn sext(&self, size: InstrSize) -> Option<Self> {
         match (self, size) {
@@ -615,8 +618,11 @@ pub enum Opcode {
     Sub,
     Mul,
     Div,
-    Sdiv,
     Mod,
+    Sadd,
+    Ssub,
+    Smul,
+    Sdiv,
     Smod,
     And,
     Or,
@@ -672,6 +678,9 @@ impl Opcode {
             Opcode::Sub => 2,
             Opcode::Mul => 2,
             Opcode::Div => 2,
+            Opcode::Sadd => 2,
+            Opcode::Ssub => 2,
+            Opcode::Smul => 2,
             Opcode::Sdiv => 2,
             Opcode::Mod => 2,
             Opcode::Smod => 2,
@@ -727,6 +736,9 @@ impl Display for Opcode {
             Self::Sub => "sub",
             Self::Mul => "mul",
             Self::Div => "div",
+            Self::Sadd => "sadd",
+            Self::Ssub => "ssub",
+            Self::Smul => "smul",
             Self::Sdiv => "sdiv",
             Self::Mod => "mod",
             Self::Smod => "smod",

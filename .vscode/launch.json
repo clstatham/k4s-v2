@@ -31,8 +31,6 @@
                 "--output",
                 "${workspaceFolder}/target/kernel.k4s",
                 "${workspaceFolder}/src/tests/zig/bootstrap.k4sm",
-                "${workspaceFolder}/src/tests/zig/bootloader.bc",
-                "${workspaceFolder}/src/tests/zig/kernel.bc"
             ],
             "cwd": "${workspaceFolder}"
         },
@@ -102,6 +100,33 @@
             "name": "Debug `k4s run`",
             "env": {
                 "RUST_LOG": "k4s=debug"
+            },
+            "cargo": {
+                "env": {
+                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                },
+                "args": [
+                    "build",
+                    "--bin=k4s",
+                    "--package=k4s-v2",
+                ],
+                "filter": {
+                    "name": "k4s",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "run",
+                "${workspaceFolder}/target/kernel.k4s"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug `k4s run` (verbose)",
+            "env": {
+                "RUST_LOG": "k4s=trace"
             },
             "cargo": {
                 "env": {

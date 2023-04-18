@@ -1,6 +1,8 @@
 use std::{
     collections::BTreeMap,
-    sync::atomic::{AtomicUsize, Ordering},
+    fs::File,
+    io::{Read, Write},
+    path::Path,
 };
 
 use anyhow::{Context, Error, Result};
@@ -8,10 +10,11 @@ use anyhow::{Context, Error, Result};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::k4s::{
+    contexts::llvm::LlvmContext,
     parsers::{
         asm::{
-            data, header, header_entry, header_region, lab_offset_const, label, opcode, size,
-            token, UnlinkedRef, UnlinkedRefType,
+            data, header, header_entry, header_include, header_region, lab_offset_const, label,
+            opcode, size, token, UnlinkedRef, UnlinkedRefType,
         },
         machine::tags,
     },
@@ -20,9 +23,9 @@ use crate::k4s::{
 
 #[derive(Debug, Clone)]
 pub enum Header {
-    Entry(Label, u64),
-    Include(String),
-    Region(u64, u64, Vec<Label>),
+    Entry(Label, String),
+    Include(String, String),
+    Region(String, u64, u64),
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +58,7 @@ impl ParsedLine {
         match self {
             Self::Comment(comment) => comment.to_owned(),
             Self::Header(head) => match head {
-                Header::Include(path) => format!("!include \"{}\"", path),
+                Header::Include(path, _region) => format!("!include \"{}\"", path),
                 Header::Entry(lab, adr) => format!("!ent {} @ {}", lab, adr),
                 Header::Region(virt, load, _labels) => {
                     format!("!region {} > {} : <labels>", virt, load)
@@ -76,8 +79,7 @@ impl ParsedLine {
                 AssembledLine::new_unassembled(ParsedLine::Comment(line.to_owned())),
             ));
         }
-        if let Ok((rest, header)) = header(line) {
-            let rest = rest.trim();
+        if let Ok((_rest, header)) = header(line) {
             let header = match header {
                 "!ent" => {
                     // if rest.starts_with("0x") {
@@ -95,9 +97,13 @@ impl ParsedLine {
                     }
                 }
                 "!include" => {
-                    let rest = rest.strip_prefix('\"').unwrap_or(rest);
-                    let rest = rest.strip_suffix('\"').unwrap_or(rest);
-                    Header::Include(rest.to_owned())
+                    if let Ok((_rest, header)) = header_include(line) {
+                        header
+                    } else {
+                        return Err(Error::msg(
+                            "Expected `!include` tag to be in the form of `!include \"path\" @ 0xvirtaddr > 0xloadaddr`",
+                        ));
+                    }
                 }
                 "!region" => {
                     if let Ok((_rest, header)) = header_region(line) {
@@ -217,7 +223,7 @@ impl AssembledLine {
 #[derive(Debug, Clone, Default)]
 pub struct AssembledBlock {
     pub label: Label,
-    pub refs: usize,
+    pub used: bool,
     pub lines: Vec<AssembledLine>,
 }
 
@@ -233,7 +239,7 @@ impl AssembledBlock {
 
 #[derive(Debug)]
 pub struct MemoryRegion {
-    pub id: usize,
+    pub tag: String,
     pub data: Vec<u8>,
     pub program: Vec<u8>,
     pub rel_pc: u64,
@@ -261,17 +267,19 @@ pub struct AssemblyContext {
     pub linked_refs: FxHashMap<RefType, u64>, // (label, addr found at)
     pub unlinked_refs: FxHashMap<RefType, Vec<UnlinkedRef>>, // (label, addrs found at)
 
-    pub region_mappings: FxHashMap<String, usize>,
-    pub regions: FxHashMap<usize, MemoryRegion>,
-    pub next_region_id: AtomicUsize,
+    pub region_mappings: FxHashMap<String, String>,
+    pub regions: FxHashMap<String, MemoryRegion>,
 
     pub entry_label: Option<Label>,
     pub used_labels: FxHashSet<usize>,
 
-    pub included_modules: FxHashSet<String>,
+    pub data_lines: Vec<AssembledLine>,
+
+    pub included_modules_regions: FxHashMap<String, String>,
     pub input: String,
     pub pc: u64,
     pub entry_point: u64,
+    pub entry_region: Option<String>,
 
     pub symbols: BTreeMap<u64, String>,
     pub kept_blocks: Vec<AssembledBlock>,
@@ -284,32 +292,33 @@ impl AssemblyContext {
             blocks: FxHashMap::default(),
             linked_refs: FxHashMap::default(),
             unlinked_refs: FxHashMap::default(),
-            included_modules: FxHashSet::default(),
+            included_modules_regions: FxHashMap::default(),
             region_mappings: FxHashMap::default(),
             regions: FxHashMap::default(),
-            next_region_id: AtomicUsize::new(0),
+            data_lines: Vec::new(),
             entry_label: None,
             used_labels: FxHashSet::default(),
             input,
             pc: 0,
             entry_point: 0,
+            entry_region: None,
             symbols: BTreeMap::default(),
             kept_blocks: Vec::new(),
             output: Vec::new(),
         }
     }
 
-    pub fn push_program_bytes(&mut self, bytes: &[u8], region_id: usize) {
+    pub fn push_program_bytes(&mut self, bytes: &[u8], region: &str) {
         self.regions
-            .get_mut(&region_id)
+            .get_mut(region)
             .unwrap()
             .program
             .extend_from_slice(bytes);
     }
 
-    pub fn push_data_bytes(&mut self, bytes: &[u8], region_id: usize) {
+    pub fn push_data_bytes(&mut self, bytes: &[u8], region: &str) {
         self.regions
-            .get_mut(&region_id)
+            .get_mut(region)
             .unwrap()
             .data
             .extend_from_slice(bytes);
@@ -321,30 +330,20 @@ impl AssemblyContext {
             None,
             true,
             include_symbols,
-            &FxHashSet::default(),
+            &FxHashMap::default(),
             &FxHashMap::default(),
         )
     }
 
-    fn assemble_impl(
+    fn populate(
         &mut self,
+        region_override: Option<&mut MemoryRegion>,
         entry_point: Option<u64>,
-        include_header: bool,
-        include_symbols: bool,
-        existing_includes: &FxHashSet<String>,
-        existing_linked_refs: &FxHashMap<RefType, u64>,
-    ) -> Result<Vec<u8>> {
-        if let Some(entry_point) = entry_point {
-            self.entry_point = entry_point;
-            self.pc = entry_point;
-        }
-
-        self.linked_refs = existing_linked_refs.clone();
-
+        existing_includes: &FxHashMap<String, u64>,
+    ) -> Result<()> {
         let mut in_header = true;
         let mut in_function = false;
         let mut current_function = None;
-        let mut data_lines = Vec::default();
         for (line_no, line) in self.input.clone().lines().enumerate() {
             if line.trim().is_empty() {
                 continue;
@@ -353,9 +352,9 @@ impl AssemblyContext {
             let (junk, parsed_line) = ParsedLine::parse(line)
                 .context(format!("Error while parsing line {}:\n{}", line_no, line))?;
             if let ParsedLine::Data(_) = parsed_line.asm {
-                data_lines.push(parsed_line.to_owned());
+                self.data_lines.push(parsed_line.to_owned());
             } else if let ParsedLine::DataOffsetConst(..) = parsed_line.asm {
-                data_lines.push(parsed_line.to_owned());
+                self.data_lines.push(parsed_line.to_owned());
             } else if !junk.is_empty() && !junk.trim().starts_with(';') {
                 log::warn!("Ignoring junk after line {line_no}: {junk}");
             }
@@ -368,47 +367,49 @@ impl AssemblyContext {
                 }
 
                 match header {
-                    Header::Entry(lab, pc) => {
+                    Header::Entry(lab, region) => {
                         if entry_point.is_some() {
                             return Err(Error::msg(format!(
-                                "Found entry point header line in non-main module on line {line_no}: {line}"
+                                "Entry point tag found in non-main module on line {line_no}: {line}"
                             )));
                         }
+                        let entry_region = self.regions.get(region).unwrap();
                         self.entry_label = Some(lab.to_owned());
-                        self.pc = *pc;
-                        self.entry_point = *pc;
-                        // let region = MemoryRegion {
-                        //     id: self.next_region_id.fetch_add(1, Ordering::SeqCst),
-                        //     data: Vec::new(),
-                        //     rel_pc: 0,
-                        //     virt: *pc,
-                        //     load: *pc,
-                        // };
-                        // assert_eq!(region.id, 0);
-                        // self.regions.insert(region.id, region);
+                        self.pc = entry_region.virt;
+                        self.entry_point = entry_region.virt;
+                        self.entry_region = Some(region.to_owned());
+                        self.region_mappings.insert(lab.name(), region.to_owned());
                     }
-                    Header::Include(path) => {
-                        if !existing_includes
-                            .union(&self.included_modules)
-                            .collect::<FxHashSet<_>>()
-                            .contains(&path.to_owned())
-                        {
-                            self.included_modules.insert(path.to_owned());
+                    Header::Include(path, region) => {
+                        if region_override.is_none() {
+                            if !existing_includes.contains_key(path)
+                                && !self.included_modules_regions.contains_key(path)
+                            {
+                                self.included_modules_regions
+                                    .insert(path.to_owned(), region.to_owned());
+                            }
+                        } else {
+                            return Err(Error::msg(
+                                "Include tag found when region override was present",
+                            ));
                         }
                     }
-                    Header::Region(virt, load, labels) => {
-                        let region = MemoryRegion {
-                            id: self.next_region_id.fetch_add(1, Ordering::SeqCst),
-                            program: Vec::new(),
-                            data: Vec::new(),
-                            rel_pc: 0,
-                            virt: *virt,
-                            load: *load,
-                        };
-                        for lab in labels {
-                            self.region_mappings.insert(lab.name(), region.id);
+                    Header::Region(tag, virt, load) => {
+                        if region_override.is_none() {
+                            let region = MemoryRegion {
+                                tag: tag.to_owned(),
+                                program: Vec::new(),
+                                data: Vec::new(),
+                                rel_pc: 0,
+                                virt: *virt,
+                                load: *load,
+                            };
+                            self.regions.insert(region.tag.to_owned(), region);
+                        } else {
+                            return Err(Error::msg(
+                                "Region tag found when region override was present",
+                            ));
                         }
-                        self.regions.insert(region.id, region);
                     }
                 }
             } else {
@@ -418,7 +419,7 @@ impl AssemblyContext {
                         in_function = true;
                         current_function = Some(AssembledBlock {
                             label: lab.clone(),
-                            refs: 0,
+                            used: false,
                             lines: Vec::new(),
                         });
                     }
@@ -444,19 +445,94 @@ impl AssemblyContext {
                 }
             }
         }
+        Ok(())
+    }
 
-        for (_name, block) in self.blocks.clone().iter_mut() {
+    fn assemble_impl(
+        &mut self,
+        entry_point: Option<u64>,
+        include_header: bool,
+        include_symbols: bool,
+        existing_includes: &FxHashMap<String, u64>,
+        existing_linked_refs: &FxHashMap<RefType, u64>,
+    ) -> Result<Vec<u8>> {
+        if let Some(entry_point) = entry_point {
+            self.entry_point = entry_point;
+            self.pc = entry_point;
+        }
+
+        self.linked_refs = existing_linked_refs.clone();
+
+        self.populate(None, entry_point, existing_includes)?;
+
+        // resolve included modules
+        for (path, region) in self.included_modules_regions.iter() {
+            let buf = Path::new(path).to_path_buf();
+            let asm = if buf.extension().unwrap() == "bc" {
+                let mut parser = LlvmContext::load(&buf);
+                log::info!("Lowering submodule {} to k4sm assembly.", buf.display());
+                let asm = parser.lower()?;
+                let mut file = File::create(buf.with_extension("k4sm"))?;
+                write!(&mut file, "{}", asm)?;
+                asm
+            } else {
+                let mut file = File::open(&buf)?;
+                let mut asm = String::new();
+                file.read_to_string(&mut asm)?;
+                asm
+            };
+
+            let mut ctx = AssemblyContext::new(asm);
+            log::info!("Populating assembly context for {}.", buf.display());
+            ctx.populate(
+                Some(self.regions.get_mut(region).unwrap()),
+                entry_point,
+                existing_includes,
+            )?;
+            for (block_name, block) in ctx.blocks.iter_mut() {
+                log::debug!("{} ===> {}", block_name, region);
+                block.label.region_tag = Some(region.to_owned());
+                for label in block.all_label_refs() {
+                    label.region_tag = Some(region.to_owned());
+                    self.region_mappings
+                        .insert(label.name().to_owned(), region.to_owned());
+                }
+                self.region_mappings
+                    .insert(block_name.to_owned(), region.to_owned());
+                self.blocks.insert(block_name.to_owned(), block.to_owned());
+            }
+            for data in ctx.data_lines.iter_mut() {
+                if let ParsedLine::Data(ref mut dat) = data.asm {
+                    dat.label.region_tag = Some(region.to_owned());
+                    self.region_mappings
+                        .insert(dat.label.name(), region.to_owned());
+                } else if let ParsedLine::DataOffsetConst(ref mut name, _, _) = data.asm {
+                    name.region_tag = Some(region.to_owned());
+                    self.region_mappings.insert(name.name(), region.to_owned());
+                }
+            }
+            self.data_lines.extend_from_slice(&ctx.data_lines);
+            // included_asm_by_region
+            //     .entry(region.to_owned())
+            //     .or_insert(Vec::new())
+            //     .push(ctx);
+            // let blocks = ctx.blocks.values().cloned().collect::<Vec<_>>();
+        }
+
+        let mut blocks = self.blocks.clone();
+        for (_name, block) in self.blocks.iter_mut() {
             for reference in block.all_label_refs() {
-                if let Some(referenced_block) = self.blocks.get_mut(&reference.name()) {
-                    referenced_block.refs += 1;
+                if let Some(referenced_block) = blocks.get_mut(&reference.name()) {
+                    referenced_block.used = true;
                 }
             }
         }
 
-        // todo: reimplement dead code pruning
-        let mut kept_blocks: Vec<AssembledBlock> = self
-            .blocks
+        let mut kept_blocks: Vec<AssembledBlock> = blocks
             .values()
+            .filter(|block| {
+                block.used || block.label.name() == self.entry_label.as_ref().unwrap().name()
+            })
             .map(|block| block.to_owned())
             .collect::<Vec<_>>();
         kept_blocks
@@ -475,9 +551,9 @@ impl AssemblyContext {
                 );
             } else {
                 log::trace!(
-                    "Assembling block {} ({} refs, {} lines)",
+                    "Assembling block {} (used: {}, {} lines)",
                     block.label,
-                    block.refs,
+                    block.used,
                     block.lines.len()
                 );
             }
@@ -485,28 +561,31 @@ impl AssemblyContext {
             {
                 let region = self
                     .regions
-                    .get(self.region_mappings.get(&block.label.name()).unwrap_or(&0))
+                    .get(
+                        self.region_mappings.get(&block.label.name()).unwrap(), // .unwrap_or(self.entry_region.as_ref().unwrap()),
+                    )
                     .unwrap();
-                block.label.region_id = Some(region.id);
-                self.region_mappings.insert(block.label.name(), region.id);
+                block.label.region_tag = Some(region.tag.to_owned());
+                self.region_mappings
+                    .insert(block.label.name(), region.tag.to_owned());
             }
 
             // for every line of assembly...
             for line in block.lines.iter_mut() {
                 let region = self
                     .regions
-                    .get_mut(self.region_mappings.get(&block.label.name()).unwrap_or(&0))
+                    .get_mut(self.region_mappings.get(&block.label.name()).unwrap())
                     .unwrap();
 
                 // if it's an instruction, make sure we link any addrs in the arguments later
                 if let ParsedLine::Instr(ref mut instr) = line.asm {
                     let (size, mut refs) =
-                        instr.assemble(region.rel_pc, region.id, &mut line.mc)?;
+                        instr.assemble(region.rel_pc, &region.tag, &mut line.mc)?;
 
                     // put addr arguments in the unlinked_refs to the label for that addr
                     for refr in refs.iter_mut() {
-                        refr.label.region_id =
-                            self.region_mappings.get(&refr.label.name()).copied();
+                        refr.label.region_tag =
+                            self.region_mappings.get(&refr.label.name()).cloned();
                         self.unlinked_refs
                             .entry(refr.ref_type())
                             .or_insert(Vec::default())
@@ -516,8 +595,9 @@ impl AssemblyContext {
                     region.rel_pc += size as u64;
                 } else if let ParsedLine::Label(ref mut lab) = line.asm {
                     // if it's a whole label, mark down where it ended up, offset by the region's virtual start
-                    lab.region_id = Some(region.id);
-                    self.region_mappings.insert(lab.name(), region.id);
+                    lab.region_tag = Some(region.tag.to_owned());
+                    self.region_mappings
+                        .insert(lab.name(), region.tag.to_owned());
                     self.linked_refs
                         .entry(RefType::Label(lab.name()))
                         .or_insert(region.rel_pc);
@@ -525,18 +605,22 @@ impl AssemblyContext {
             }
         }
 
-        for data_line in data_lines {
+        for data_line in self.data_lines.clone() {
             if let ParsedLine::Data(data) = data_line.asm {
                 if !self
                     .linked_refs
                     .contains_key(&RefType::Data(data.label.name()))
                 {
-                    let region_id = *self.region_mappings.entry(data.label.name()).or_insert(0);
+                    let region_id = self
+                        .region_mappings
+                        .entry(data.label.name())
+                        .or_insert(self.entry_region.as_ref().unwrap().clone())
+                        .clone();
                     let region = self.regions.get(&region_id).unwrap();
 
                     if data.align > 0 {
                         let pad = (data.align - (region.data.len() % data.align)) % data.align;
-                        self.push_data_bytes(&vec![0; pad], region_id);
+                        self.push_data_bytes(&vec![0; pad], &region_id);
                     }
 
                     let region = self.regions.get(&region_id).unwrap();
@@ -545,11 +629,15 @@ impl AssemblyContext {
                         region.data.len() as u64,
                     );
 
-                    self.push_data_bytes(&data.data, region_id);
+                    self.push_data_bytes(&data.data, &region_id);
                 }
             } else if let ParsedLine::DataOffsetConst(name, off, lab) = data_line.asm {
-                let region_id = *self.region_mappings.entry(name.name()).or_insert(0);
-                let region = self.regions.get(&region_id).unwrap();
+                let region_tag = self
+                    .region_mappings
+                    .entry(name.name())
+                    .or_insert(self.entry_region.as_ref().unwrap().clone())
+                    .clone();
+                let region = self.regions.get(&region_tag).unwrap();
 
                 self.unlinked_refs
                     .entry(RefType::Data(lab.name()))
@@ -557,7 +645,7 @@ impl AssemblyContext {
                     .push(UnlinkedRef {
                         ty: UnlinkedRefType::DataOffset(off),
                         label: lab.to_owned(),
-                        region_id,
+                        region_tag: region_tag.to_owned(),
                         loc: region.data.len() as u64,
                     });
 
@@ -568,15 +656,15 @@ impl AssemblyContext {
                     );
                 }
 
-                self.push_data_bytes(&[0; 8], region_id);
+                self.push_data_bytes(&[0; 8], &region_tag);
             }
         }
 
         // 2nd pass of resolving label regions
         for (_, refrs) in self.unlinked_refs.iter_mut() {
             for refr in refrs.iter_mut() {
-                refr.label.region_id = self.region_mappings.get(&refr.label.name()).copied();
-                if refr.label.region_id.is_none() {
+                refr.label.region_tag = self.region_mappings.get(&refr.label.name()).cloned();
+                if refr.label.region_tag.is_none() {
                     log::warn!(
                         "2nd pass: Couldn't find or infer region for label {}",
                         refr.label
@@ -587,11 +675,11 @@ impl AssemblyContext {
 
         for block in kept_blocks.iter_mut() {
             for refr_label in block.all_label_refs() {
-                if refr_label.region_id.is_none() {
-                    refr_label.region_id = Some(
+                if refr_label.region_tag.is_none() {
+                    refr_label.region_tag = Some(
                         self.region_mappings
                             .get(&refr_label.name())
-                            .copied()
+                            .cloned()
                             .unwrap(),
                     );
                 }
@@ -600,7 +688,10 @@ impl AssemblyContext {
 
         for block in kept_blocks.iter_mut() {
             for line in block.lines.iter_mut() {
-                self.push_program_bytes(&line.mc, self.region_mappings[&block.label.name()]);
+                self.push_program_bytes(
+                    &line.mc,
+                    &self.region_mappings[&block.label.name()].to_owned(),
+                );
             }
         }
 
@@ -612,11 +703,11 @@ impl AssemblyContext {
             if let Some(loc) = self.linked_refs.get(lab) {
                 for refr in refs.drain(..) {
                     let (adjusted_loc, program_len) = {
-                        let region = self.regions.get(&refr.label.region_id.unwrap()).unwrap();
+                        let region = self.regions.get(&refr.label.region_tag.unwrap()).unwrap();
                         (*loc + region.virt, region.program.len() as u64)
                     };
 
-                    let refr_region = self.regions.get_mut(&refr.region_id).unwrap();
+                    let refr_region = self.regions.get_mut(&refr.region_tag).unwrap();
 
                     match refr.ty {
                         UnlinkedRefType::Label => refr_region.program

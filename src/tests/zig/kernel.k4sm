@@ -1,20 +1,104 @@
+@kernel.bc_global_0 align8 "\x50\x61\x67\x69\x6e\x67\x20\x69\x73\x20\x65\x6e\x61\x62\x6c\x65\x64\x21\x00"
 %kernel_main
     push i64 bp
     mov i64 bp sp
-    sub i64 sp $0
+    sub i64 sp $8
+    mov i64 [-8+bp] rg
     jmp i64 %kernel_main_Entry
 %kernel_main_Entry
 ;
-;tail call @printi(i64 69696969)
-    mov i64 rg $69696969
-    call i64 %printi
+;tail call @println()
+    call i64 %println
 ;
 ;tail call @hlt()
-    call i64 %hlt
+    call i64 %kernel_bc_hlt
     mov i64 rb %kernel_main_Entry
 ;unreachable
     und 
 %kernel_main_ret
+    mov i64 sp bp
+    pop i64 bp
+    ret 
+
+%println
+    push i64 bp
+    mov i64 bp sp
+    sub i64 sp $64
+    jmp i64 %println_Entry
+%println_Entry
+    mov i64 rb %println_Entry
+;br label %ForCond
+    jmp i64 %println_ForCond
+%println_ForCond
+;
+;%lsr.iv = phi i64 [ i64 %lsr.iv.next, %ForBody ], [ i64 -18, %Entry ]
+    cmp i64 rb %println_ForBody
+    jeq i64 %println_phi_10000001_ForBody
+    cmp i64 rb %println_Entry
+    jeq i64 %println_phi_10000002_Entry
+    und 
+%println_phi_10000001_ForBody
+    mov i64 [-8+bp] [-16+bp]
+    jmp i64 %println_phi_10000000_end
+%println_phi_10000002_Entry
+    mov i64 [-8+bp] $18446744073709551598
+    jmp i64 %println_phi_10000000_end
+%println_phi_10000000_end
+;
+;%exitcond.not = icmp eq i64 %lsr.iv, i64 0
+    cmp i64 [-8+bp] $0
+    jeq i64 %println_cmp_jeq_10000005_true
+    jmp i64 %println_cmp_jeq_10000005_false
+%println_cmp_jeq_10000005_true
+    mov i8 [-24+bp] r1
+    jmp i64 %println_cmp_jeq_10000005_end
+%println_cmp_jeq_10000005_false
+    mov i8 [-24+bp] r0
+    jmp i64 %println_cmp_jeq_10000005_end
+%println_cmp_jeq_10000005_end
+    mov i64 rb %println_ForCond
+;br i1 %exitcond.not, label %ForEnd, label %ForBody
+    cmp i8 [-24+bp] $0
+    jne i64 %println_ForEnd
+    jmp i64 %println_ForBody
+    und 
+%println_ForBody
+;
+;%scevgep = getelementptr [19 x i8]* @global_0, i64 0, i64 %lsr.iv
+    mov i64 [-32+bp] @kernel_bc_global_0
+    mov i64 rc [-8+bp]
+    smul i64 rc $1
+    sadd i64 [-32+bp] rc
+    mov i64 [-40+bp] [-32+bp]
+;
+;%scevgep1 = getelementptr i8* %scevgep, i64 18
+    mov i64 [-48+bp] [-40+bp]
+    sadd i64 [-48+bp] $18
+    mov i64 [-56+bp] [-48+bp]
+;
+;%0 = load i8* %scevgep1, align 1
+    mov i64 rc [-56+bp]
+    mov i8 [-64+bp] [rc]
+;
+;tail call @printc(i8 %0)
+    mov i8 rg [-64+bp]
+    call i64 %kernel_bc_printc
+;
+;%lsr.iv.next = add i64 %lsr.iv, i64 1
+    mov i64 [-16+bp] [-8+bp]
+    sadd i64 [-16+bp] $1
+    mov i64 rb %println_ForBody
+;br label %ForCond
+    jmp i64 %println_ForCond
+%println_ForEnd
+;
+;tail call @printc(i8 10)
+    mov i8 rg $10
+    call i64 %kernel_bc_printc
+    mov i64 rb %println_ForEnd
+;ret void
+    jmp i64 %println_ret
+%println_ret
     mov i64 sp bp
     pop i64 bp
     ret 

@@ -223,6 +223,9 @@ pub fn parse_opcode(mc: &[u8]) -> IResult<&[u8], Opcode> {
             |mc| Opcode::Jge.parse_mc(mc),
             |mc| Opcode::Jle.parse_mc(mc),
             |mc| Opcode::Enpt.parse_mc(mc),
+            |mc| Opcode::Sadd.parse_mc(mc),
+            |mc| Opcode::Smul.parse_mc(mc),
+            |mc| Opcode::Ssub.parse_mc(mc),
         )),
     ))(mc)
 }

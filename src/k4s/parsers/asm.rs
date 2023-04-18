@@ -164,18 +164,63 @@ pub fn header(i: &str) -> IResult<&str, &str> {
     )))(i)
 }
 
+pub fn region_tag(i: &str) -> IResult<&str, &str> {
+    recognize(preceded(
+        tag("{"),
+        terminated(
+            many1(alt((
+                alpha1,
+                tag("_"),
+                tag("."),
+                recognize(|i| decimal(InstrSize::I64, i)),
+            ))),
+            tag("}"),
+        ),
+    ))(i)
+}
+
+pub fn header_include(i: &str) -> IResult<&str, Header> {
+    map(
+        tuple((
+            tag("!include"),
+            space1,
+            preceded(
+                tag("\""),
+                terminated(
+                    recognize(many1(alt((
+                        alpha1,
+                        tag("_"),
+                        tag("."),
+                        tag("/"),
+                        tag("\\"),
+                        recognize(|i| decimal(InstrSize::I64, i)),
+                    )))),
+                    tag("\""),
+                ),
+            ),
+            space1,
+            tag("@"),
+            space1,
+            region_tag,
+        )),
+        |(_, _, path, _, _, _, region)| Header::Include(path.to_owned(), region.to_owned()),
+    )(i)
+}
+
 pub fn header_entry(i: &str) -> IResult<&str, Header> {
     map(
-        tuple((tag("!ent"), space1, label, space1, tag("@"), space1, |i| {
-            hexadecimal(InstrSize::I64, i)
-        })),
-        |(_, _, lab, _, _, _, adr)| {
+        tuple((
+            tag("!ent"),
+            space1,
+            label,
+            space1,
+            tag("@"),
+            space1,
+            region_tag,
+        )),
+        |(_, _, lab, _, _, _, region)| {
             if let Token::Label(lab) = lab {
-                if let Token::I64(adr) = adr {
-                    Header::Entry(lab, adr)
-                } else {
-                    unreachable!()
-                }
+                Header::Entry(lab, region.to_owned())
             } else {
                 unreachable!()
             }
@@ -188,34 +233,20 @@ pub fn header_region(i: &str) -> IResult<&str, Header> {
         tuple((
             tag("!region"),
             space1,
+            region_tag,
+            space1,
+            tag("@"),
+            space1,
             |i| hexadecimal(InstrSize::I64, i),
             space1,
             tag(">"),
             space1,
             |i| hexadecimal(InstrSize::I64, i),
-            space1,
-            tag(":"),
-            many1(tuple((space1, alt((label, data_tag))))),
         )),
-        |(_, _, virt, _, _, _, load, _, _, labels)| {
+        |(_, _, tag, _, _, _, virt, _, _, _, load)| {
             if let Token::I64(virt) = virt {
                 if let Token::I64(load) = load {
-                    Header::Region(
-                        virt,
-                        load,
-                        labels
-                            .iter()
-                            .map(|(_, label)| {
-                                if let Token::Label(lab) = label {
-                                    lab.to_owned()
-                                } else if let Token::Data(dat) = label {
-                                    dat.label.to_owned()
-                                } else {
-                                    unreachable!()
-                                }
-                            })
-                            .collect(),
-                    )
+                    Header::Region(tag.to_owned(), virt, load)
                 } else {
                     unreachable!()
                 }
@@ -515,6 +546,9 @@ pub fn opcode(asm: &str) -> IResult<&str, Opcode> {
             |asm| Opcode::Jge.parse_asm(asm),
             |asm| Opcode::Jle.parse_asm(asm),
             |asm| Opcode::Enpt.parse_asm(asm),
+            |asm| Opcode::Sadd.parse_asm(asm),
+            |asm| Opcode::Smul.parse_asm(asm),
+            |asm| Opcode::Ssub.parse_asm(asm),
         )),
     ))(asm)
 }
@@ -535,7 +569,7 @@ impl Token {
     pub fn assemble(
         &mut self,
         pc: u64,
-        region_id: usize,
+        region_tag: &str,
         line: &mut Vec<u8>,
     ) -> Option<UnlinkedRef> {
         match self {
@@ -578,7 +612,7 @@ impl Token {
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::DataOffset(*off),
                     label: lab.to_owned(),
-                    region_id,
+                    region_tag: region_tag.to_owned(),
                     loc: pc + 1,
                 });
             }
@@ -588,13 +622,13 @@ impl Token {
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Label,
                     label: lab.to_owned(),
-                    region_id,
+                    region_tag: region_tag.to_owned(),
                     loc: pc + 1,
                 });
             }
             Token::Addr(adr) => {
                 line.extend_from_slice(&[ADDRESS]);
-                return adr.assemble(pc + 1, region_id, line);
+                return adr.assemble(pc + 1, region_tag, line);
             }
             Token::Unknown => panic!("Attempt to assemble an unknown token"), // todo: Err instead of panic
             Token::Data(data) => {
@@ -603,7 +637,7 @@ impl Token {
                 return Some(UnlinkedRef {
                     ty: UnlinkedRefType::Data,
                     label: data.label.to_owned(),
-                    region_id,
+                    region_tag: region_tag.to_owned(),
                     loc: pc + 1,
                 });
             }
@@ -643,7 +677,7 @@ pub enum UnlinkedRefType {
 pub struct UnlinkedRef {
     pub ty: UnlinkedRefType,
     pub label: Label,
-    pub region_id: usize,
+    pub region_tag: String,
     pub loc: u64,
 }
 
@@ -675,7 +709,7 @@ impl Instr {
     pub fn assemble(
         &mut self,
         mut pc: u64,
-        region_id: usize,
+        region_tag: &str,
         line: &mut Vec<u8>,
     ) -> Result<(usize, Vec<UnlinkedRef>)> {
         let opcode = self.opcode.mc_repr();
@@ -685,13 +719,13 @@ impl Instr {
         pc += 2;
         let mut refs = Vec::new();
         if let Some(ref mut arg) = self.arg0 {
-            if let Some(r) = arg.assemble(pc, region_id, line) {
+            if let Some(r) = arg.assemble(pc, region_tag, line) {
                 refs.push(r);
             }
             pc += arg.mc_size_in_bytes() as u64;
         }
         if let Some(ref mut arg) = self.arg1 {
-            if let Some(r) = arg.assemble(pc, region_id, line) {
+            if let Some(r) = arg.assemble(pc, region_tag, line) {
                 refs.push(r);
             }
             pc += arg.mc_size_in_bytes() as u64;

@@ -1,0 +1,22 @@
+
+%start_high
+    call i64 %kernel_main
+    hlt
+    und
+
+
+%kernel_bc_printi
+    printi i64 rg
+    ret
+
+%kernel_bc_printc
+    printc i8 rg
+    ret
+
+%kernel_bc_hlt
+    hlt
+    und
+
+%kernel_bc_und
+    und
+    ret

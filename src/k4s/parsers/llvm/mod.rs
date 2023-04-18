@@ -49,12 +49,15 @@ impl Ssa {
         op: &Operand,
         ctx: &mut FunctionContext,
         types: &Types,
+        global_prefix: &str,
         globals: &FxHashMap<Name, Ssa>,
     ) -> Self {
         match op {
             Operand::LocalOperand { name, ty } => ctx.get_or_push(name, ty, types),
             Operand::MetadataOperand => todo!("metadata operand"),
-            Operand::ConstantOperand(con) => Self::parse_const(con, ctx.gen_name(), types, globals),
+            Operand::ConstantOperand(con) => {
+                Self::parse_const(con, ctx.gen_name(), types, global_prefix, globals)
+            }
         }
     }
 
@@ -204,12 +207,13 @@ impl Expr {
         instr: &Instruction,
         ctx: &mut FunctionContext,
         types: &Types,
+        global_prefix: &str,
         globals: &FxHashMap<Name, Ssa>,
     ) -> Expr {
         macro_rules! arith_instr {
             ($instr:ident, $opcode:ident) => {{
-                let a = Ssa::parse_operand(&$instr.operand0, ctx, types, globals);
-                let b = Ssa::parse_operand(&$instr.operand1, ctx, types, globals);
+                let a = Ssa::parse_operand(&$instr.operand0, ctx, types, global_prefix, globals);
+                let b = Ssa::parse_operand(&$instr.operand1, ctx, types, global_prefix, globals);
                 assert_eq!(a.ty().as_ref(), b.ty().as_ref());
                 let dest = ctx.get_or_push(&$instr.dest, &a.ty(), types);
                 let expr = Expr::builder()
@@ -232,7 +236,7 @@ impl Expr {
         }
         macro_rules! cast_instr {
             ($instr:ident) => {{
-                let src = Ssa::parse_operand(&$instr.operand, ctx, types, globals);
+                let src = Ssa::parse_operand(&$instr.operand, ctx, types, global_prefix, globals);
                 let dest = ctx.get_or_push(&$instr.dest, &$instr.to_type, types);
                 let mut expr = Expr::builder()
                     // .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
@@ -298,7 +302,7 @@ impl Expr {
                 expr
             }
             Instruction::Load(instr) => {
-                let src = Ssa::parse_operand(&instr.address, ctx, types, globals);
+                let src = Ssa::parse_operand(&instr.address, ctx, types, global_prefix, globals);
                 let dest =
                     ctx.get_or_push(&instr.dest, src.pointee_type().as_ref().unwrap(), types);
                 let tmp = ctx.any_register().unwrap();
@@ -326,8 +330,8 @@ impl Expr {
                 expr
             }
             Instruction::Store(instr) => {
-                let src = Ssa::parse_operand(&instr.value, ctx, types, globals);
-                let dest = Ssa::parse_operand(&instr.address, ctx, types, globals);
+                let src = Ssa::parse_operand(&instr.value, ctx, types, global_prefix, globals);
+                let dest = Ssa::parse_operand(&instr.address, ctx, types, global_prefix, globals);
                 let tmp = ctx.any_register().unwrap();
                 let expr = Expr::builder()
                     // .push_comment(&format!("    type of src {}: {}", src.storage(), src.ty()))
@@ -353,9 +357,9 @@ impl Expr {
                 expr
             }
 
-            Instruction::Add(instr) => arith_instr!(instr, Add),
-            Instruction::Sub(instr) => arith_instr!(instr, Sub),
-            Instruction::Mul(instr) => arith_instr!(instr, Mul),
+            Instruction::Add(instr) => arith_instr!(instr, Sadd),
+            Instruction::Sub(instr) => arith_instr!(instr, Ssub),
+            Instruction::Mul(instr) => arith_instr!(instr, Smul),
             Instruction::UDiv(instr) => arith_instr!(instr, Div),
             Instruction::SDiv(instr) => arith_instr!(instr, Sdiv),
             Instruction::URem(instr) => arith_instr!(instr, Mod),
@@ -374,7 +378,7 @@ impl Expr {
             Instruction::Call(instr) => {
                 let func = if instr.function.is_right() {
                     let func = instr.function.as_ref().unwrap_right();
-                    Ssa::parse_operand(func, ctx, types, globals)
+                    Ssa::parse_operand(func, ctx, types, global_prefix, globals)
                 } else {
                     let func_name = ctx.name().to_owned().strip_prefix();
                     let asm = instr.function.as_ref().unwrap_left();
@@ -397,7 +401,7 @@ impl Expr {
                         // if !attrs.is_empty() {
                         //     dbg!(attrs);
                         // }
-                        args.push(Ssa::parse_operand(arg, ctx, types, globals));
+                        args.push(Ssa::parse_operand(arg, ctx, types, global_prefix, globals));
                     }
                 }
                 let dest = if let Type::FuncType { result_type, .. } = func.ty().as_ref() {
@@ -506,7 +510,7 @@ impl Expr {
                 cast_instr!(instr)
             }
             Instruction::SExt(instr) => {
-                let src = Ssa::parse_operand(&instr.operand, ctx, types, globals);
+                let src = Ssa::parse_operand(&instr.operand, ctx, types, global_prefix, globals);
                 let dest = ctx.get_or_push(&instr.dest, &instr.to_type, types);
                 let expr = Expr::builder()
                     .push_instr(Instr::new(
@@ -526,8 +530,8 @@ impl Expr {
                 expr
             }
             Instruction::ICmp(instr) => {
-                let a = Ssa::parse_operand(&instr.operand0, ctx, types, globals);
-                let b = Ssa::parse_operand(&instr.operand1, ctx, types, globals);
+                let a = Ssa::parse_operand(&instr.operand0, ctx, types, global_prefix, globals);
+                let b = Ssa::parse_operand(&instr.operand1, ctx, types, global_prefix, globals);
                 let dest = ctx.get_or_push(
                     &instr.dest,
                     &Type::IntegerType { bits: 1 }.get_type(types),
@@ -609,8 +613,8 @@ impl Expr {
             }
 
             Instruction::FCmp(instr) => {
-                let a = Ssa::parse_operand(&instr.operand0, ctx, types, globals);
-                let b = Ssa::parse_operand(&instr.operand1, ctx, types, globals);
+                let a = Ssa::parse_operand(&instr.operand0, ctx, types, global_prefix, globals);
+                let b = Ssa::parse_operand(&instr.operand1, ctx, types, global_prefix, globals);
                 let dest = ctx.get_or_push(
                     &instr.dest,
                     &Type::IntegerType { bits: 1 }.get_type(types),
@@ -706,20 +710,21 @@ impl Expr {
                 expr.build()
             }
             Instruction::GetElementPtr(instr) => {
-                let addr = Ssa::parse_operand(&instr.address, ctx, types, globals);
+                let addr = Ssa::parse_operand(&instr.address, ctx, types, global_prefix, globals);
 
                 let indices = instr
                     .indices
                     .iter()
-                    .map(|idx| Ssa::parse_operand(idx, ctx, types, globals))
+                    .map(|idx| Ssa::parse_operand(idx, ctx, types, global_prefix, globals))
                     .collect::<Vec<_>>();
 
                 let (expr, _dest) = Self::gep(instr.dest.to_owned(), addr, indices, ctx, types);
                 expr
             }
             Instruction::InsertValue(instr) => {
-                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types, globals);
-                let element = Ssa::parse_operand(&instr.element, ctx, types, globals);
+                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types, global_prefix, globals);
+                let element =
+                    Ssa::parse_operand(&instr.element, ctx, types, global_prefix, globals);
                 let dest = ctx.get_or_push(&instr.dest, &agg.ty(), types);
                 // dbg!(agg.storage(), element.storage());
                 // if let Token::Unknown = agg.storage() {
@@ -791,7 +796,7 @@ impl Expr {
                     Some(Token::I64(-off as u64)),
                 ));
                 expr.push_instr(Instr::new(
-                    Opcode::Add,
+                    Opcode::Sadd,
                     InstrSize::I64,
                     Some(Token::Register(tmp)),
                     Some(Token::I64(offset)),
@@ -807,7 +812,7 @@ impl Expr {
                 expr
             }
             Instruction::ExtractValue(instr) => {
-                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types, globals);
+                let agg = Ssa::parse_operand(&instr.aggregate, ctx, types, global_prefix, globals);
                 let mut current_ty = agg.ty().as_ref().to_owned();
                 let mut offset: u64 = 0;
                 for idx in instr.indices.iter() {
@@ -873,7 +878,7 @@ impl Expr {
                     Some(Token::I64(-off as u64)),
                 ));
                 expr.push_instr(Instr::new(
-                    Opcode::Add,
+                    Opcode::Sadd,
                     InstrSize::I64,
                     Some(Token::Register(tmp)),
                     Some(Token::I64(offset)),
@@ -907,7 +912,7 @@ impl Expr {
                         id,
                         loc.strip_prefix()
                     );
-                    let op = Ssa::parse_operand(op, ctx, types, globals);
+                    let op = Ssa::parse_operand(op, ctx, types, global_prefix, globals);
                     let loc = format!("{}_{}", ctx.name().strip_prefix(), loc.strip_prefix());
                     let loc = Token::Label(Label::new(loc));
                     ops.push(op);
@@ -947,9 +952,11 @@ impl Expr {
                 expr
             }
             Instruction::Select(instr) => {
-                let cond = Ssa::parse_operand(&instr.condition, ctx, types, globals);
-                let true_val = Ssa::parse_operand(&instr.true_value, ctx, types, globals);
-                let false_val = Ssa::parse_operand(&instr.false_value, ctx, types, globals);
+                let cond = Ssa::parse_operand(&instr.condition, ctx, types, global_prefix, globals);
+                let true_val =
+                    Ssa::parse_operand(&instr.true_value, ctx, types, global_prefix, globals);
+                let false_val =
+                    Ssa::parse_operand(&instr.false_value, ctx, types, global_prefix, globals);
                 assert_eq!(true_val.ty().as_ref(), false_val.ty().as_ref());
                 let dest = ctx.get_or_push(&instr.dest, &true_val.ty(), types);
                 let id = ctx.gen_name().strip_prefix();
@@ -1071,7 +1078,7 @@ impl Expr {
                     };
                     if offset > 0 {
                         expr.push_instr(Instr::new(
-                            Opcode::Add,
+                            Opcode::Sadd,
                             InstrSize::I64,
                             Some(tmp_dest.storage().to_owned()),
                             Some(Token::I64(offset)),
@@ -1090,7 +1097,7 @@ impl Expr {
                     if let Some(idx) = idx.storage().as_integer::<u64>() {
                         if idx > 0 {
                             expr.push_instr(Instr::new(
-                                Opcode::Add,
+                                Opcode::Sadd,
                                 InstrSize::I64,
                                 Some(tmp_dest.storage().to_owned()),
                                 Some(Token::I64((size as i64 * idx as i64) as u64)),
@@ -1105,13 +1112,13 @@ impl Expr {
                             Some(idx.storage().to_owned()),
                         ));
                         expr.push_instr(Instr::new(
-                            Opcode::Mul,
+                            Opcode::Smul,
                             InstrSize::I64,
                             Some(Token::Register(tmp)),
                             Some(Token::I64(size as u64)),
                         ));
                         expr.push_instr(Instr::new(
-                            Opcode::Add,
+                            Opcode::Sadd,
                             InstrSize::I64,
                             Some(tmp_dest.storage().to_owned()),
                             Some(Token::Register(tmp)),

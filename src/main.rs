@@ -60,7 +60,7 @@ fn run(bin_paths: Vec<PathBuf>) -> Result<()> {
 fn build_llvm(mut src_path: PathBuf) -> Result<Option<PathBuf>> {
     if let Some(ext) = src_path.extension() {
         if &ext.to_string_lossy() == "bc" {
-            let mut ctx = LlvmContext::load(src_path.clone());
+            let mut ctx = LlvmContext::load(&src_path);
             log::info!(
                 "Lowering {} to k4sm assembly.",
                 src_path.file_name().unwrap().to_string_lossy()

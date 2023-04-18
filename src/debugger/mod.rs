@@ -79,6 +79,7 @@ fn App(cx: Scope<DebuggerProps>) -> Element {
                     if let Err(e) = emu.run_until_hlt() {
                         log::debug!("{:?}", e);
                     }
+                    emu.update_dbg_info().unwrap();
                 },
                 "Continue",
             }

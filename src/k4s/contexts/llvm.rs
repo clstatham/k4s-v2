@@ -1,7 +1,7 @@
 use std::{
     fmt::Write,
     ops::{Deref, DerefMut},
-    path::Path,
+    path::PathBuf,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -132,6 +132,7 @@ pub struct LlvmContext {
     globals: FxHashMap<Name, Ssa>,
     functions: FxHashMap<Name, FunctionContext>,
     current_func: Option<Name>,
+    loaded_file: Option<String>,
 }
 
 impl LlvmContext {
@@ -141,11 +142,17 @@ impl LlvmContext {
             globals: FxHashMap::default(),
             functions: FxHashMap::default(),
             current_func: None,
+            loaded_file: None,
         }
     }
 
-    pub fn load(path: impl AsRef<Path>) -> Self {
-        Self::new(Module::from_bc_path(path).unwrap())
+    pub fn load(path: &PathBuf) -> Self {
+        let mut this = Self::new(Module::from_bc_path(path).unwrap());
+        this.loaded_file = Some(format!(
+            "{}",
+            path.file_name().as_ref().unwrap().to_str().unwrap()
+        ));
+        this
     }
 
     pub fn types(&self) -> &Types {
@@ -166,29 +173,39 @@ impl LlvmContext {
         let module = self.module.clone();
         let types = self.types().clone();
 
+        let global_prefix = format!(
+            "{}_",
+            self.loaded_file
+                .as_ref()
+                .unwrap_or(&self.module.source_file_name),
+        );
+
         // phase 1: parse globals
         for global in module.global_vars.iter() {
+            let global_id = format!("{}{}", global_prefix, global.name);
             let ssa = Ssa::parse_const(
                 global
                     .initializer
                     .as_ref()
                     .expect("todo: non const globals"),
-                global.name.to_owned().into(),
+                global_id.to_owned().into(),
                 &types,
+                &global_prefix,
                 &self.globals,
             );
 
-            self.globals.insert(global.name.to_owned().into(), ssa);
+            self.globals.insert(global_id.into(), ssa);
         }
         for func in module.functions.iter() {
+            let func_id = format!("{}{}", global_prefix, func.name);
             let ssa = Ssa::new(
-                func.name.to_owned().into(),
+                func_id.to_owned().into(),
                 func.get_type(&types),
                 Token::Label(Label::new(func.name.to_owned())),
                 None,
             );
 
-            self.globals.insert(func.name.to_owned().into(), ssa);
+            self.globals.insert(func_id.to_owned().into(), ssa);
         }
 
         // phase 2: parse functions
@@ -315,7 +332,13 @@ impl LlvmContext {
                             .push_comment(&format!("\n;{}", instr))
                             .build(),
                     );
-                    exprs.push(Expr::parse(instr, ctx, &types, &self.globals));
+                    exprs.push(Expr::parse(
+                        instr,
+                        ctx,
+                        &types,
+                        &global_prefix,
+                        &self.globals,
+                    ));
                 }
 
                 exprs.push(
@@ -340,7 +363,13 @@ impl LlvmContext {
                     Terminator::Ret(ret) => {
                         let mut ret_expr = Expr::new();
                         if let Some(ret_op) = &ret.return_operand {
-                            let ret_ssa = Ssa::parse_operand(ret_op, ctx, &types, &self.globals);
+                            let ret_ssa = Ssa::parse_operand(
+                                ret_op,
+                                ctx,
+                                &types,
+                                &global_prefix,
+                                &self.globals,
+                            );
                             ret_expr.push_instr(Instr::new(
                                 Opcode::Mov,
                                 ret_ssa.instr_size(&types),
@@ -358,7 +387,13 @@ impl LlvmContext {
                         exprs.push(ret_expr);
                     }
                     Terminator::CondBr(br) => {
-                        let cond = Ssa::parse_operand(&br.condition, ctx, &types, &self.globals);
+                        let cond = Ssa::parse_operand(
+                            &br.condition,
+                            ctx,
+                            &types,
+                            &global_prefix,
+                            &self.globals,
+                        );
                         let true_dest = format!(
                             "{}_{}",
                             func_name.strip_prefix(),
@@ -406,11 +441,22 @@ impl LlvmContext {
                         exprs.push(expr);
                     }
                     Terminator::Switch(switch) => {
-                        let op = Ssa::parse_operand(&switch.operand, ctx, &types, &self.globals);
+                        let op = Ssa::parse_operand(
+                            &switch.operand,
+                            ctx,
+                            &types,
+                            &global_prefix,
+                            &self.globals,
+                        );
                         let mut expr = Expr::new();
                         for (case, dest) in switch.dests.iter() {
-                            let case =
-                                Ssa::parse_const(case, ctx.gen_name(), &types, &self.globals);
+                            let case = Ssa::parse_const(
+                                case,
+                                ctx.gen_name(),
+                                &types,
+                                &global_prefix,
+                                &self.globals,
+                            );
                             let dest =
                                 format!("{}_{}", func_name.strip_prefix(), dest.strip_prefix());
 
@@ -505,7 +551,14 @@ impl LlvmContext {
         // globals
         for (global_name, global) in self.globals.iter() {
             if let Some(agg) = global.agg_const() {
-                Self::dump_agg(&mut out, agg, global_name.to_owned(), &types, &self.globals);
+                Self::dump_agg(
+                    &mut out,
+                    agg,
+                    global_name.to_owned(),
+                    &types,
+                    &global_prefix,
+                    &self.globals,
+                );
             }
         }
 
@@ -570,6 +623,7 @@ impl LlvmContext {
         agg: ConstantRef,
         agg_name: Name,
         types: &Types,
+        global_prefix: &str,
         globals: &FxHashMap<Name, Ssa>,
     ) {
         if let Constant::Struct {
@@ -584,9 +638,22 @@ impl LlvmContext {
             let mut total = 0;
             while let Some((i, elem)) = it.next() {
                 let elem_name = format!("@{}_elem{}", agg_name.strip_prefix(), i);
-                let elem = Ssa::parse_const(elem, elem_name.to_owned().into(), types, globals);
+                let elem = Ssa::parse_const(
+                    elem,
+                    elem_name.to_owned().into(),
+                    types,
+                    global_prefix,
+                    globals,
+                );
                 if let Some(agg2) = elem.agg_const() {
-                    Self::dump_agg(out, agg2, elem_name.to_owned().into(), types, globals);
+                    Self::dump_agg(
+                        out,
+                        agg2,
+                        elem_name.to_owned().into(),
+                        types,
+                        global_prefix,
+                        globals,
+                    );
                 } else if let Some(int) = elem.storage().as_integer::<u128>() {
                     let align = match elem.storage() {
                         Token::I8(_) => 1,

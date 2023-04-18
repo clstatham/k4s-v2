@@ -14,6 +14,7 @@ impl Ssa {
         con: &ConstantRef,
         name: Name,
         types: &Types,
+        global_prefix: &str,
         globals: &FxHashMap<Name, Ssa>,
     ) -> Self {
         let ty = con.get_type(types);
@@ -35,20 +36,23 @@ impl Ssa {
             Constant::GlobalReference {
                 name: ref_name,
                 ty: ref_ty,
-            } => Self::new(
-                name,
-                Type::PointerType {
-                    pointee_type: ref_ty.to_owned(),
-                    addr_space: 0,
-                }
-                .get_type(types),
-                globals
-                    .get(&ref_name.to_owned().into())
-                    .map(|ssa| ssa.storage().to_owned())
-                    .unwrap_or_else(|| Token::Label(Label::new(ref_name.to_owned()))),
-                // Token::LabelOffset(0, Label::new_unlinked(ref_name.to_owned())),
-                None,
-            ),
+            } => {
+                let ref_name = format!("{}{}", global_prefix, ref_name);
+                Self::new(
+                    name,
+                    Type::PointerType {
+                        pointee_type: ref_ty.to_owned(),
+                        addr_space: 0,
+                    }
+                    .get_type(types),
+                    globals
+                        .get(&ref_name.to_owned().into())
+                        .map(|ssa| ssa.storage().to_owned())
+                        .unwrap_or_else(|| Token::Label(Label::new(ref_name.to_owned()))),
+                    // Token::LabelOffset(0, Label::new_unlinked(ref_name.to_owned())),
+                    None,
+                )
+            }
             Constant::Undef(ty) => Self::new(
                 name,
                 ty.to_owned(),
@@ -95,7 +99,7 @@ impl Ssa {
                             .enumerate()
                             .map(|(i, elem)| {
                                 let name = format!("{}_elem{}", name.to_owned().strip_prefix(), i);
-                                Self::parse_const(elem, name.into(), types, globals)
+                                Self::parse_const(elem, name.into(), types, global_prefix, globals)
                                     .storage()
                                     .as_integer()
                                     .unwrap()
@@ -117,7 +121,13 @@ impl Ssa {
                 Some(con.to_owned()),
             ),
             Constant::BitCast(cast) => {
-                let op = Self::parse_const(&cast.operand, name.to_owned(), types, globals);
+                let op = Self::parse_const(
+                    &cast.operand,
+                    name.to_owned(),
+                    types,
+                    global_prefix,
+                    globals,
+                );
                 Self::new(
                     name,
                     cast.to_type.to_owned(),
@@ -126,7 +136,13 @@ impl Ssa {
                 )
             }
             Constant::IntToPtr(cast) => {
-                let op = Self::parse_const(&cast.operand, name.to_owned(), types, globals);
+                let op = Self::parse_const(
+                    &cast.operand,
+                    name.to_owned(),
+                    types,
+                    global_prefix,
+                    globals,
+                );
                 Self::new(
                     name,
                     cast.to_type.to_owned(),
@@ -135,11 +151,14 @@ impl Ssa {
                 )
             }
             Constant::GetElementPtr(gep) => {
-                let addr = Self::parse_const(&gep.address, name.to_owned(), types, globals);
+                let addr =
+                    Self::parse_const(&gep.address, name.to_owned(), types, global_prefix, globals);
                 let indices = gep
                     .indices
                     .iter()
-                    .map(|idx| Self::parse_const(idx, name.to_owned(), types, globals))
+                    .map(|idx| {
+                        Self::parse_const(idx, name.to_owned(), types, global_prefix, globals)
+                    })
                     .collect::<Vec<_>>();
                 let mut current_type = addr.ty().as_ref().to_owned();
                 let mut offset = 0;
