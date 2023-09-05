@@ -581,7 +581,9 @@ impl AssemblyContext {
                 let region = self
                     .regions
                     .get(
-                        self.region_mappings.get(&block.label.name()).unwrap(), // .unwrap_or(self.entry_region.as_ref().unwrap()),
+                        self.region_mappings
+                            .get(&block.label.name())
+                            .unwrap_or(self.entry_region.as_ref().unwrap()),
                     )
                     .unwrap();
                 block.label.region_tag = Some(region.tag.to_owned());

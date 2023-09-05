@@ -117,7 +117,7 @@ fn main() -> Result<()> {
             run(bins)?;
         }
         Commands::Debug { bins } => {
-            debugger::debugger_main(bins)?;
+            debugger::debugger_main(bins);
         }
         Commands::Build {
             sources,

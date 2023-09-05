@@ -277,7 +277,7 @@ impl MachineContext {
         //     log::trace!("arg1 = {:?} ({:x?})", tok, tok_eval);
         // }
         self.instr_history.push_back(format!("{}{}", "    ".repeat(self.call_depth), instr.display_with_symbols(&self.debug_symbols)));
-        if self.instr_history.len() > 1000 {
+        if self.instr_history.len() > 10000 {
             self.instr_history.pop_front();
         }
         if update_dbg_info {

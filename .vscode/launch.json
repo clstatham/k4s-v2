@@ -12,9 +12,9 @@
                 "RUST_LOG": "k4s=trace"
             },
             "cargo": {
-                "env": {
-                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
-                },
+                // "env": {
+                //     "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                // },
                 "args": [
                     "build",
                     "--bin=k4s",
@@ -42,9 +42,9 @@
                 "RUST_LOG": "k4s=trace"
             },
             "cargo": {
-                "env": {
-                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
-                },
+                // "env": {
+                //     "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                // },
                 "args": [
                     "build",
                     "--bin=k4s",
@@ -72,9 +72,9 @@
                 "RUST_LOG": "k4s=trace"
             },
             "cargo": {
-                "env": {
-                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
-                },
+                // "env": {
+                //     "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                // },
                 "args": [
                     "build",
                     "--bin=k4s",
@@ -102,9 +102,9 @@
                 "RUST_LOG": "k4s=debug"
             },
             "cargo": {
-                "env": {
-                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
-                },
+                // "env": {
+                //     "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                // },
                 "args": [
                     "build",
                     "--bin=k4s",
@@ -129,9 +129,9 @@
                 "RUST_LOG": "k4s=trace"
             },
             "cargo": {
-                "env": {
-                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
-                },
+                // "env": {
+                //     "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                // },
                 "args": [
                     "build",
                     "--bin=k4s",
@@ -156,9 +156,9 @@
                 "RUST_LOG": "k4s=debug"
             },
             "cargo": {
-                "env": {
-                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
-                },
+                // "env": {
+                //     "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                // },
                 "args": [
                     "build",
                     "--bin=k4s",
@@ -183,9 +183,9 @@
                 "RUST_LOG": "k4s=trace"
             },
             "cargo": {
-                "env": {
-                    "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
-                },
+                // "env": {
+                //     "LLVM_SYS_130_PREFIX": "/home/cls/.local/share/llvmenv/13.0.0",
+                // },
                 "args": [
                     "test",
                     "--no-run",

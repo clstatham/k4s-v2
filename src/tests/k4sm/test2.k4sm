@@ -1,8 +1,11 @@
-!ent %_start @ 0x1000
+!region {main} @ 0x100000 > 0x100000
+!ent %_start @ {main}
 
 @hello align0 resb 0
 @hello_elem0 align1 "Hello Everyone!"
 %_start
+    mov i64 sp $0x400000
+    mov i64 bp sp
     mov i64 rg @hello
     mov i64 rh @hello_elem0
     call i64 %printstrln_asm
