@@ -148,10 +148,14 @@ impl LlvmContext {
 
     pub fn load(path: &PathBuf) -> Self {
         let mut this = Self::new(Module::from_bc_path(path).unwrap());
-        this.loaded_file = Some(format!(
-            "{}",
-            path.file_name().as_ref().unwrap().to_str().unwrap()
-        ));
+        this.loaded_file = Some(
+            path.file_name()
+                .as_ref()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string(),
+        );
         this
     }
 

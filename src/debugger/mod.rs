@@ -1,7 +1,6 @@
 use std::{fs::File, io::Read, path::PathBuf};
 
 use crate::{k4s::contexts::machine::MachineContext, FOUR_GIGS};
-use anyhow::Result;
 use eframe::{egui, epaint::Vec2, NativeOptions};
 
 pub fn debugger_main(bin_paths: Vec<PathBuf>) {
@@ -11,7 +10,7 @@ pub fn debugger_main(bin_paths: Vec<PathBuf>) {
             initial_window_size: Some(Vec2::new(1600.0, 900.0)),
             ..Default::default()
         },
-        Box::new(move |cc| Box::new(DebuggerApp::new(&bin_paths))),
+        Box::new(move |_cc| Box::new(DebuggerApp::new(&bin_paths))),
     )
     .unwrap();
 }
@@ -35,7 +34,7 @@ impl DebuggerApp {
 }
 
 impl eframe::App for DebuggerApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("registers").show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.group(|ui| {
